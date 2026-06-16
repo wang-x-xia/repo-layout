@@ -25,8 +25,8 @@ when:
 
 **生成测试结果：**
 ```bash
-uv run test/test_case.py generate core-success
-uv run test/test_case.py generate core-error
+uv run test/test_case.py verify core-success --generate
+uv run test/test_case.py verify core-error --generate
 ```
 
 **验证单个测试：**

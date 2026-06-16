@@ -60,13 +60,8 @@ def _node_to_dict_entry(name: str, node: TreeNode) -> Dict[str, Any]:
         # File node: name -> description
         return {name: node.description}
     elif isinstance(node, FolderNode):
-        # Folder node
-        if node.metadata and not node.children:
-            # When condition with show_files: false, just metadata
-            return {name: node.metadata}
-        else:
-            # Normal folder or folder with metadata
-            return _folder_node_to_dict_entry(name, node)
+        # Folder node - always add '/' suffix for consistency
+        return _folder_node_to_dict_entry(name, node)
     else:
         raise TypeError(f"Unknown node type: {type(node)}")
 
@@ -82,6 +77,10 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode) -> Dict[str, Any]:
     Returns:
         Dictionary with a single key-value pair (formatted)
     """
+    # Handle when condition with show_files: false (no children, only metadata)
+    if folder.metadata and not folder.children:
+        return {f"{name}/": folder.metadata}
+
     # Process children recursively
     children_dict = {}
     for child_name, child_node in folder.children.items():

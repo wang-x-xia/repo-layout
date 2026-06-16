@@ -6,9 +6,9 @@ file2.txt: Description from .md file
 file2.txt.md: null
 file3.txt: null
 nested/nested/:
-  nested_a/nested/single_file.txt: null
+  nested/nested/single_file.txt: null
   nested_b/nested/: {}
-tags:
+tags/:
   description: Test directory for custom tags
 test.log: null
 

@@ -1,5 +1,17 @@
 import yaml
+from yaml.emitter import Emitter, ScalarAnalysis
 from typing import Any
+
+
+class EmptyValue:
+    """
+    表示空值的特殊对象，在 YAML 中渲染为空字符串（无引号）。
+    用于表示没有 description 的文件或空文件夹。
+    """
+    pass
+
+# 模块级别的单例实例
+YAML_BLANK = EmptyValue()
 
 
 class Dumper(yaml.Dumper):
@@ -56,8 +68,13 @@ def represent_multiline_str(dumper: Dumper, data: str) -> yaml.Node:
     return dumper.represent_scalar('tag:yaml.org,2002:str', data)
 
 
+def represent_empty_value(dumper: Dumper, data: EmptyValue) -> yaml.Node:
+    return dumper.represent_scalar('tag:yaml.org,2002:null', '')
+
 # Register custom string representer
 yaml.add_representer(str, represent_multiline_str, Dumper)
+# Register custom EmptyValue representer
+yaml.add_representer(EmptyValue, represent_empty_value, Dumper)
 
 
 def dump(data: Any, file=None, **kwargs) -> str:

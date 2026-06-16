@@ -11,9 +11,9 @@ import argparse
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from repo_layout_lib.file_tree import build_file_tree, FileTree, FolderNode, FileNode, TreeNode
+from repo_layout_lib.impl import build_file_tree, FileTree, FolderNode, FileNode, TreeNode
 from repo_layout_lib.error import ErrorCollector
-from repo_layout_lib.yaml_utils import dump
+from repo_layout_lib.yaml_utils import dump, YAML_BLANK
 
 
 def file_tree_to_dict(tree: FileTree) -> Dict[str, Any]:
@@ -57,8 +57,9 @@ def _node_to_dict_entry(name: str, node: TreeNode) -> Dict[str, Any]:
         Dictionary with a single key-value pair
     """
     if isinstance(node, FileNode):
-        # File node: name -> description
-        return {name: node.description}
+        # File node: name -> description (use YAML_BLANK for None)
+        description = node.description if node.description is not None else YAML_BLANK
+        return {name: description}
     elif isinstance(node, FolderNode):
         # Folder node - always add '/' suffix for consistency
         return _folder_node_to_dict_entry(name, node)
@@ -119,6 +120,9 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode) -> Dict[str, Any]:
                 return {merged_key: child_value}
     else:
         # Multiple children or no children, keep folder with '/' suffix
+        # Use YAML_BLANK for empty folders (no children and no metadata)
+        if not folder.children and not folder.metadata:
+            return {f"{name}/": YAML_BLANK}
         return {f"{name}/": children_dict}
 
 # Error codes

@@ -12,6 +12,32 @@ from pathlib import Path
 from enum import Enum
 
 
+@dataclass
+class FileNode:
+    """Represents a file in the tree."""
+    name: str
+    description: Optional[str] = None
+
+
+@dataclass
+class FolderNode:
+    """Represents a folder in the tree."""
+    name: str
+    children: Dict[str, 'TreeNode'] = field(default_factory=dict)
+    metadata: Optional[Dict[str, Any]] = None
+
+
+# Type alias for tree nodes (can be either file or folder)
+TreeNode = Union[FileNode, FolderNode]
+
+
+@dataclass
+class FileTree:
+    """Root of the file tree."""
+    root: FolderNode
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class VisibilityState(Enum):
     """Visibility state for folders based on when conditions."""
     VISIBLE = "visible"
@@ -421,15 +447,15 @@ def build_file_tree(
     script_path: Optional[Path] = None,
     locale: str = "zh-CN",
     error_collector: Optional[Any] = None
-) -> Dict[str, Any]:
+) -> FileTree:
     """
     Build file tree structure - unified entry point.
-    
+
     This function orchestrates the entire process:
     1. Initialize cache with configuration
     2. Load all metadata (root, folders, files)
     3. Build and return the tree structure
-    
+
     Args:
         root_path: Root directory path
         use_gitignore: Whether to use gitignore patterns
@@ -437,9 +463,9 @@ def build_file_tree(
         script_path: Path to the script (for loading known_files)
         locale: Locale for known_files
         error_collector: Optional ErrorCollector for warnings
-        
+
     Returns:
-        Nested dictionary representing the file tree
+        FileTree object representing the file tree
     """
     # Step 1: Initialize cache
     cache = initialize_cache(
@@ -449,99 +475,109 @@ def build_file_tree(
         script_path=script_path,
         locale=locale
     )
-    
+
     # Step 2-4: Build tree from cache (handles all metadata loading internally)
     return build_file_tree_from_cache(cache, error_collector)
 
 
 def build_file_tree_from_cache(
-    cache: MetadataCache, 
+    cache: MetadataCache,
     error_collector: Optional[Any] = None
-) -> Dict[str, Any]:
+) -> FileTree:
     """
     Build file tree structure from cached metadata.
-    
+
     Args:
         cache: MetadataCache with all loaded metadata
         error_collector: Optional ErrorCollector for warnings
-        
+
     Returns:
-        Nested dictionary representing the file tree
+        FileTree object representing the file tree
     """
     # Load all metadata
     load_root_metadata(cache)
     load_folder_metadata_recursive(cache, cache.config.root_path)
-    
+
     root = cache.config.root_path
-    tree = {}
-    
-    def build_tree_recursive(path: Path, current_tree: Dict[str, Any]) -> None:
+    root_folder = FolderNode(name=root.name, children={}, metadata=None)
+
+    def build_tree_recursive(path: Path, folder_node: FolderNode) -> None:
         """
         Recursively build tree structure from cached metadata.
-        
+
         Args:
             path: Current directory path
-            current_tree: Current tree dict to populate
+            folder_node: Current folder node to populate
         """
         parent_agents_file = path / 'AGENTS.md'
-        
+
         try:
             for item in sorted(path.iterdir()):
                 # Skip default ignore patterns
                 if cache.is_default_ignored(item.name):
                     continue
-                
+
                 # Skip git-ignored files if enabled
                 if cache.config.use_gitignore:
                     relative_path = str(item.relative_to(root)).replace('\\', '/')
                     if cache.is_git_ignored(relative_path, item.is_dir()):
                         continue
-                
+
                 if item.is_file():
                     # Load file metadata
                     file_metadata = load_file_metadata(
                         cache, item, parent_agents_file, error_collector
                     )
                     cache.set_file_metadata(item, file_metadata)
-                    current_tree[item.name] = file_metadata.description
-                    
+                    # Add file node to folder
+                    folder_node.children[item.name] = FileNode(
+                        name=item.name,
+                        description=file_metadata.description
+                    )
+
                 elif item.is_dir():
                     # Get cached folder metadata
                     folder_metadata = cache.get_folder_metadata(item)
-                    
+
                     # Check if when condition matches (show_files should be false)
                     should_hide_files = False
                     if folder_metadata:
                         should_hide_files = folder_metadata.should_hide_files(cache.config.tags)
-                    
+
                     if should_hide_files and folder_metadata and folder_metadata.folder_meta:
-                        # When condition matches, use folder_meta directly as the value
-                        current_tree[item.name] = folder_metadata.folder_meta
+                        # When condition matches, use folder_meta as metadata
+                        folder_node.children[item.name] = FolderNode(
+                            name=item.name,
+                            children={},
+                            metadata=folder_metadata.folder_meta
+                        )
                     else:
-                        # Create subtree for directory
-                        current_tree[item.name] = {}
-                        build_tree_recursive(item, current_tree[item.name])
-                        
-                        # Add folder_meta with :meta key (colon is illegal in filenames)
-                        if folder_metadata and folder_metadata.folder_meta:
-                            current_tree[item.name][':meta'] = folder_metadata.folder_meta
-                            
+                        # Create folder node and recurse
+                        child_folder = FolderNode(
+                            name=item.name,
+                            children={},
+                            metadata=folder_metadata.folder_meta if folder_metadata else None
+                        )
+                        folder_node.children[item.name] = child_folder
+                        build_tree_recursive(item, child_folder)
+
         except PermissionError:
             # Skip directories we don't have permission to access
             pass
-    
+
     # Build tree structure
-    build_tree_recursive(root, tree)
-    
+    build_tree_recursive(root, root_folder)
+
     # Handle root folder metadata
+    root_metadata = None
     if cache.root_metadata and cache.root_metadata.folder_meta:
         should_hide_files = cache.root_metadata.should_hide_files(cache.config.tags)
-        
+
         if should_hide_files:
-            # When condition matches, replace entire tree with folder_meta
-            tree = cache.root_metadata.folder_meta
+            # When condition matches, set root metadata
+            root_metadata = cache.root_metadata.folder_meta
         else:
-            # Add folder_meta with :meta key
-            tree[':meta'] = cache.root_metadata.folder_meta
-    
-    return tree
+            # Add folder_meta to root node
+            root_folder.metadata = cache.root_metadata.folder_meta
+
+    return FileTree(root=root_folder, metadata=root_metadata)

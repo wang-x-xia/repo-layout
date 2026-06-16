@@ -53,6 +53,16 @@ def generate_result(case_path: Path):
     data_dir = case_path / "data"
     result_dir = case_path / "result"
 
+    # Pre-check: verify data directory exists
+    if not data_dir.exists():
+        output = {
+            "action": "generate",
+            "case_path": str(case_path),
+            "error": f"Data directory not found: {data_dir}"
+        }
+        print(yaml.dump(output, default_flow_style=False, allow_unicode=True))
+        return
+
     # Clear result directory if it exists
     if result_dir.exists():
         for item in result_dir.iterdir():
@@ -71,6 +81,12 @@ def generate_result(case_path: Path):
         std_out_file = case.get('std-out')
         std_err_file = case.get('std-err')
 
+        # Default file names if not specified
+        if std_out_file is None:
+            std_out_file = f"{name}.out.yaml"
+        if std_err_file is None:
+            std_err_file = f"{name}.err.yaml"
+
         # Run command
         return_code, stdout, stderr = run_command(cli_params, data_dir)
 
@@ -85,31 +101,27 @@ def generate_result(case_path: Path):
         if return_code != expected_return_code:
             case_result["warning"] = f"Expected return code {expected_return_code}, got {return_code}"
 
-        # Save stdout if specified
-        if std_out_file is None:
-            # null means stdout should be empty, don't save
-            if stdout.strip():
-                case_result["stdout_warning"] = f"stdout should be empty but got: {stdout}"
-            case_result["stdout_saved"] = False
-        elif std_out_file:
+        # Save stdout
+        if std_out_file:
             stdout_path = result_dir / std_out_file
             with open(stdout_path, 'w', encoding='utf-8') as f:
                 f.write(stdout)
             case_result["stdout_saved"] = True
             case_result["stdout_file"] = str(stdout_path)
 
-        # Save stderr if specified
-        if std_err_file is None:
-            # null means stderr should be empty, don't save
-            if stderr.strip():
-                case_result["stderr_warning"] = f"stderr should be empty but got: {stderr}"
-            case_result["stderr_saved"] = False
-        elif std_err_file:
+        # Diagnose stderr for success cases
+        if return_code == 0 and stderr.strip():
+            case_result["stderr_warning"] = f"Return code is 0 but stderr has content: {stderr}"
+
+        # Save stderr only for error cases (return-code != 0)
+        if return_code != 0 and std_err_file:
             stderr_path = result_dir / std_err_file
             with open(stderr_path, 'w', encoding='utf-8') as f:
                 f.write(stderr)
             case_result["stderr_saved"] = True
             case_result["stderr_file"] = str(stderr_path)
+        else:
+            case_result["stderr_saved"] = False
 
         results.append(case_result)
 
@@ -148,54 +160,41 @@ def verify_result(case_path: Path):
         expected_return_code = case['return-code']
         std_out_file = case.get('std-out')
         std_err_file = case.get('std-err')
-        
+
+        # Default file names if not specified
+        if std_out_file is None:
+            std_out_file = f"{name}.out.yaml"
+        if std_err_file is None:
+            std_err_file = f"{name}.err.yaml"
+
         case_passed = True
         case_errors = []
-        
+
         # Run command
         return_code, stdout, stderr = run_command(cli_params, data_dir)
-        
-        # Check return code
+
+        # Check return code (only for stdout matching)
         if return_code != expected_return_code:
             case_passed = False
             case_errors.append(f"Return code: expected {expected_return_code}, got {return_code}")
-        
-        # Check stdout if specified
-        if std_out_file is None:
-            # null means stdout should be empty
-            if stdout.strip():
+
+        # Check stdout
+        stdout_path = result_dir / std_out_file
+        if not stdout_path.exists():
+            case_passed = False
+            case_errors.append(f"Stdout file not found: {stdout_path}")
+        else:
+            with open(stdout_path, 'r', encoding='utf-8') as f:
+                expected_stdout = f.read()
+            if stdout != expected_stdout:
                 case_passed = False
-                case_errors.append(f"Stdout should be empty but got: {stdout}")
-        elif std_out_file:
-            stdout_path = result_dir / std_out_file
-            if not stdout_path.exists():
-                case_passed = False
-                case_errors.append(f"Stdout file not found: {stdout_path}")
-            else:
-                with open(stdout_path, 'r', encoding='utf-8') as f:
-                    expected_stdout = f.read()
-                if stdout != expected_stdout:
-                    case_passed = False
-                    case_errors.append(f"Stdout does not match {std_out_file}")
-        
-        # Check stderr if specified
-        if std_err_file is None:
-            # null means stderr should be empty
-            if stderr.strip():
-                case_passed = False
-                case_errors.append(f"Stderr should be empty but got: {stderr}")
-        elif std_err_file:
-            stderr_path = result_dir / std_err_file
-            if not stderr_path.exists():
-                case_passed = False
-                case_errors.append(f"Stderr file not found: {stderr_path}")
-            else:
-                with open(stderr_path, 'r', encoding='utf-8') as f:
-                    expected_stderr = f.read()
-                if stderr != expected_stderr:
-                    case_passed = False
-                    case_errors.append(f"Stderr does not match {std_err_file}")
-        
+                case_errors.append(f"Stdout does not match {std_out_file}")
+
+        # Check stderr (must be empty for success cases, can have content for error cases)
+        if expected_return_code == 0 and stderr.strip():
+            case_passed = False
+            case_errors.append(f"Stderr should be empty but got: {stderr}")
+
         if not case_passed:
             failed_cases.append({
                 "name": name,

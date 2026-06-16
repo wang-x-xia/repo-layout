@@ -1,20 +1,22 @@
-- name: core-success
+- name: no-param
   cli-params: ""
   return-code: 0
-  std-out: core-success.yaml
-  std-err: null
-- name: core-success-tags-empty
+- name: tags-empty
   cli-params: "--tags"
   return-code: 0
-  std-out: core-success-tags-empty.yaml
-  std-err: null
-- name: core-success-tags-custom
+- name: tags-custom
   cli-params: "--tags test1"
   return-code: 0
-  std-out: core-success-tags-custom.yaml
-  std-err: null
-- name: core-success-gitignore
+- name: gitignore
   cli-params: "--no-gitignore"
   return-code: 0
-  std-out: core-success-gitignore.yaml
-  std-err: null
+- name: show-file-meta-md-omit
+  cli-params: "--show-file-meta-md omit"
+  return-code: 0
+- name: show-file-meta-md-hint
+  cli-params: "--show-file-meta-md hint"
+  return-code: 0
+  std-out: no-param.out.yaml
+- name: show-file-meta-md-show
+  cli-params: "--show-file-meta-md show"
+  return-code: 0

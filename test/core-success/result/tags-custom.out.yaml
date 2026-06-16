@@ -2,8 +2,7 @@
   description: Test case - Basic structure covering all features
 AGENTS.md: AI Agents的README
 file1.txt: Description from AGENTS.md files field
-file2.txt: Description from .md file
-file2.txt.md:
+file2.txt: ※ Description from .md file
 file3.txt:
 nested/nested/:
   nested/nested/single_file.txt:

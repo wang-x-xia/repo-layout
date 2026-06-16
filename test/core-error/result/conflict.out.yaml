@@ -1,6 +1,5 @@
 :meta:
   description: Test case - Conflict description
 AGENTS.md: AI Agents的README
-file1.txt:
-file1.txt.md:
+file1.txt: ※
 

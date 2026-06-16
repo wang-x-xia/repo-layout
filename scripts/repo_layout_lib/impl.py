@@ -17,6 +17,8 @@ class FileNode:
     """Represents a file in the tree."""
     name: str
     description: Optional[str] = None
+    meta_type: Optional[str] = None  # Type of metadata file (e.g., "md"), None if not a metadata file
+    has_meta_type: Optional[str] = None  # Type of metadata file this file has (e.g., "md"), None if none
 
 
 @dataclass
@@ -480,6 +482,27 @@ def build_file_tree(
     return build_file_tree_from_cache(cache, error_collector)
 
 
+def get_meta_file_type(filename: str) -> Optional[str]:
+    """
+    Get the metadata file type if filename is a metadata file.
+
+    Args:
+        filename: The filename to check
+
+    Returns:
+        Metadata type (e.g., "md") if the filename matches metadata pattern, None otherwise
+    """
+    # Pattern: has at least one dot before .md, and ends with .md
+    # Examples: file.py.md, file.txt.md, but not README.md or file.md
+    if not filename.endswith('.md'):
+        return None
+    # Remove .md suffix and check if there's at least one dot remaining
+    base = filename[:-3]  # Remove .md
+    if '.' in base:
+        return "md"
+    return None
+
+
 def build_file_tree_from_cache(
     cache: MetadataCache,
     error_collector: Optional[Any] = None
@@ -532,7 +555,8 @@ def build_file_tree_from_cache(
                     # Add file node to folder
                     folder_node.children[item.name] = FileNode(
                         name=item.name,
-                        description=file_metadata.description
+                        description=file_metadata.description,
+                        meta_type=get_meta_file_type(item.name)
                     )
 
                 elif item.is_dir():
@@ -567,6 +591,37 @@ def build_file_tree_from_cache(
 
     # Build tree structure
     build_tree_recursive(root, root_folder)
+
+    # Post-process: mark files that have corresponding metadata files
+    def mark_has_meta_type(folder_node: FolderNode) -> None:
+        """
+        Mark files that have corresponding metadata files.
+
+        Args:
+            folder_node: Folder node to process
+        """
+        # Collect all metadata files in this folder
+        meta_files = {}  # original_name -> meta_type
+        for child_name, child_node in folder_node.children.items():
+            if isinstance(child_node, FileNode) and child_node.meta_type:
+                # Extract the original filename: file.txt.md -> file.txt
+                # Remove .{meta_type} suffix (including the dot)
+                suffix = f".{child_node.meta_type}"
+                original_name = child_name[:-len(suffix)]
+                meta_files[original_name] = child_node.meta_type
+
+        # Mark files that have corresponding metadata files
+        for child_name, child_node in folder_node.children.items():
+            if isinstance(child_node, FileNode) and not child_node.meta_type:
+                if child_name in meta_files:
+                    child_node.has_meta_type = meta_files[child_name]
+
+        # Recursively process subfolders
+        for child_node in folder_node.children.values():
+            if isinstance(child_node, FolderNode):
+                mark_has_meta_type(child_node)
+
+    mark_has_meta_type(root_folder)
 
     # Handle root folder metadata
     root_metadata = None

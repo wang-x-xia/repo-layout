@@ -13,43 +13,18 @@ from pathlib import Path
 from typing import Dict, Any, Set, Optional
 from repo_layout_lib.git import is_git_repo, get_git_ignored_files
 from repo_layout_lib.known_files import load_known_files, get_file_description
+from repo_layout_lib.error import ErrorCollector
+from repo_layout_lib.yaml_utils import dump
+
+# Error/Warning codes
+WARNING_CONFLICT_FILE_DESCRIPTION = "conflict_file_description"
+ERROR_FILE_NOT_FOUND = "file_not_found"
 
 # Set stdout encoding to UTF-8 for Windows compatibility
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
 
-def sort_tree_with_metadata(tree: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Sort tree dictionary with metadata keys (starting with :) first.
 
-    Args:
-        tree: The tree dictionary to sort
-
-    Returns:
-        Sorted tree dictionary
-    """
-    if not isinstance(tree, dict):
-        return tree
-
-    # Separate keys into metadata keys (starting with :) and regular keys
-    meta_keys = [k for k in tree.keys() if k.startswith(':')]
-    regular_keys = [k for k in tree.keys() if not k.startswith(':')]
-
-    # Sort both groups
-    meta_keys.sort()
-    regular_keys.sort()
-
-    # Build new sorted dictionary
-    sorted_tree = {}
-    for key in meta_keys + regular_keys:
-        value = tree[key]
-        if isinstance(value, dict):
-            # Recursively sort nested dictionaries
-            sorted_tree[key] = sort_tree_with_metadata(value)
-        else:
-            sorted_tree[key] = value
-
-    return sorted_tree
 
 def parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
     """
@@ -80,17 +55,67 @@ def parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
         # If parsing fails, return None
         return None
 
-def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any]:
+def get_file_description_from_agents(agents_file: Path, filename: str) -> Optional[str]:
+    """
+    Get file description from AGENTS.md frontmatter files field.
+
+    Args:
+        agents_file: Path to the AGENTS.md file
+        filename: Name of the file to get description for
+
+    Returns:
+        Description string if found, None otherwise
+    """
+    if not agents_file.exists():
+        return None
+
+    frontmatter = parse_frontmatter(agents_file)
+    if not frontmatter or 'files' not in frontmatter:
+        return None
+
+    files_dict = frontmatter['files']
+    if isinstance(files_dict, dict) and filename in files_dict:
+        return files_dict[filename]
+
+    return None
+
+def get_file_description_from_md_file(file_path: Path) -> Optional[str]:
+    """
+    Get file description from {file_name}.{ext}.md frontmatter description field.
+
+    Args:
+        file_path: Path to the original file
+
+    Returns:
+        Description string if found, None otherwise
+    """
+    # Construct the .md file path: file_name.ext.md
+    md_file_path = file_path.parent / f"{file_path.name}.md"
+
+    if not md_file_path.exists():
+        return None
+
+    frontmatter = parse_frontmatter(md_file_path)
+    if not frontmatter or 'description' not in frontmatter:
+        return None
+
+    return frontmatter['description']
+
+def build_file_tree(root_path: str, use_gitignore: bool = True, error_collector: Optional[ErrorCollector] = None) -> Dict[str, Any]:
     """
     Build a tree structure of all files in the directory.
 
     Args:
         root_path: The root directory path to scan
         use_gitignore: Whether to use .gitignore patterns for filtering
+        error_collector: Optional ErrorCollector to collect warnings and errors
 
     Returns:
         A nested dictionary representing the file tree
     """
+    # Create error collector if not provided
+    if error_collector is None:
+        error_collector = ErrorCollector()
     # Default ignore patterns
     ignore_patterns = ['.git', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', 'build']
 
@@ -107,6 +132,9 @@ def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any
     tree = {}
 
     def scan_directory(path: Path, current_tree: Dict[str, Any]):
+        # Check for AGENTS.md in current directory
+        agents_file = path / 'AGENTS.md'
+
         try:
             for item in sorted(path.iterdir()):
                 # Skip default ignore patterns
@@ -122,18 +150,41 @@ def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any
                         continue
 
                 if item.is_file():
-                    # Add file with description if known, otherwise empty value
-                    description = get_file_description(known_files, item.name)
+                    # Get description from multiple sources with conflict detection
+                    desc_from_agents = get_file_description_from_agents(agents_file, item.name)
+                    desc_from_md = get_file_description_from_md_file(item)
+                    desc_from_known = get_file_description(known_files, item.name)
+
+                    # Check for conflicts: if both custom sources have descriptions, use default value and warn
+                    if desc_from_agents is not None and desc_from_md is not None:
+                        warning_data = {
+                            "file": str(item.relative_to(root)),
+                            "conflict_definitions": [
+                                str(agents_file.relative_to(root)),
+                                str(item.relative_to(root)) + ".md"
+                            ]
+                        }
+                        error_collector.add_warning(WARNING_CONFLICT_FILE_DESCRIPTION, warning_data)
+                        # Use default value (known_files) when conflict occurs
+                        description = desc_from_known
+                    # Use custom description if available, otherwise fall back to known_files
+                    elif desc_from_agents is not None:
+                        description = desc_from_agents
+                    elif desc_from_md is not None:
+                        description = desc_from_md
+                    else:
+                        description = desc_from_known
+
                     current_tree[item.name] = description if description else None
                 elif item.is_dir():
                     # Create subtree for directory
                     current_tree[item.name] = {}
                     scan_directory(item, current_tree[item.name])
 
-                    # Check for AGENTS.md and parse its frontmatter
-                    agents_file = item / 'AGENTS.md'
-                    if agents_file.exists():
-                        frontmatter = parse_frontmatter(agents_file)
+                    # Check for AGENTS.md in the subdirectory and parse its frontmatter
+                    sub_agents_file = item / 'AGENTS.md'
+                    if sub_agents_file.exists():
+                        frontmatter = parse_frontmatter(sub_agents_file)
                         if frontmatter and 'folder_meta' in frontmatter:
                             # Add folder_meta with :meta key (colon is illegal in filenames)
                             current_tree[item.name][':meta'] = frontmatter['folder_meta']
@@ -155,23 +206,37 @@ def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any
 
 def main():
     parser = argparse.ArgumentParser(description='Generate file tree structure in YAML format')
-    parser.add_argument('path', nargs='?', default=os.getcwd(), 
+    parser.add_argument('path', nargs='?', default=os.getcwd(),
                        help='Path to the directory to scan (default: current directory)')
     parser.add_argument('--no-gitignore', action='store_true',
                        help='Disable .gitignore filtering (default: enabled)')
-    
+
     args = parser.parse_args()
     root_path = args.path
     use_gitignore = not args.no_gitignore
-    
-    tree = build_file_tree(root_path, use_gitignore)
 
-    # Sort tree with metadata keys first
-    sorted_tree = sort_tree_with_metadata(tree)
+    error_collector = ErrorCollector()
 
-    # Output as YAML
-    yaml_output = yaml.dump(sorted_tree, default_flow_style=False, sort_keys=False, allow_unicode=True)
-    print(yaml_output)
+    try:
+        tree = build_file_tree(root_path, use_gitignore, error_collector)
+
+        # Output as YAML with metadata sorting
+        yaml_output = dump(tree)
+        print(yaml_output)
+
+        # Output all collected errors and warnings
+        error_collector.output()
+
+        return error_collector.get_exit_code()
+    except FileNotFoundError as e:
+        error_collector.add_error(ERROR_FILE_NOT_FOUND, {"path": str(e)})
+        error_collector.output()
+        return 1
+    except Exception as e:
+        # Catch-all for unexpected errors
+        error_collector.add_error("unknown_error", {"message": str(e)})
+        error_collector.output()
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

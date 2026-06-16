@@ -18,6 +18,10 @@ class Dumper(yaml.Dumper):
     """
     Custom YAML dumper with metadata key sorting and multiline text support.
     """
+    def ignore_aliases(self, data):
+        # Disable anchor/alias optimization to always output literal values
+        return True
+
     def represent_mapping(self, tag: str, mapping: dict, flow_style: Any = None) -> yaml.Node:
         """
         Override represent_mapping to sort metadata keys first.

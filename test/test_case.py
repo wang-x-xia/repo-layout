@@ -53,6 +53,12 @@ def generate_result(case_path: Path):
     data_dir = case_path / "data"
     result_dir = case_path / "result"
 
+    # Clear result directory if it exists
+    if result_dir.exists():
+        for item in result_dir.iterdir():
+            if item.is_file():
+                item.unlink()
+
     # Create result directory if it doesn't exist
     result_dir.mkdir(parents=True, exist_ok=True)
 

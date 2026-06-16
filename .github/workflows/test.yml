@@ -9,19 +9,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install uv
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-    
-    - name: Install dependencies
+
+    - name: Pre-load dependencies
       run: |
-        uv pip install pyyaml
-    
+        uv run scripts/file_tree.py --help
+        uv run test/test_case.py --help
+
     - name: Run tests
       run: |
         uv run test/test_case.py verify-all

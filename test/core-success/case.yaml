@@ -1,0 +1,20 @@
+- name: core-success
+  cli-params: ""
+  return-code: 0
+  std-out: core-success.yaml
+  std-err: null
+- name: core-success-tags-empty
+  cli-params: "--tags"
+  return-code: 0
+  std-out: core-success-tags-empty.yaml
+  std-err: null
+- name: core-success-tags-custom
+  cli-params: "--tags test1"
+  return-code: 0
+  std-out: core-success-tags-custom.yaml
+  std-err: null
+- name: core-success-gitignore
+  cli-params: "--no-gitignore"
+  return-code: 0
+  std-out: core-success-gitignore.yaml
+  std-err: null

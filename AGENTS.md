@@ -14,3 +14,7 @@ folder_meta:
 - 不使用项目级包管理，依赖在脚本内部定义
 - 使用 `uv run` 运行脚本
 - 脚本配置 UTF-8 输出编码以支持中文等多语言字符（Windows兼容）
+
+## 测试
+
+运行测试：`uv run test/test_case.py verify-all`

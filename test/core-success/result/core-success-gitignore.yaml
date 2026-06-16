@@ -1,0 +1,13 @@
+:meta:
+  description: Test case - Basic structure covering all features
+AGENTS.md: AI Agents的README
+file1.txt: Description from AGENTS.md files field
+file2.txt: Description from .md file
+file2.txt.md: null
+file3.txt: null
+test.log: null
+testdir:
+  :meta:
+    description: Test directory for custom tags
+  AGENTS.md: AI Agents的README
+

@@ -1,0 +1,7 @@
+errors:
+- code: conflict_file_description
+  data:
+    conflict_definitions:
+    - AGENTS.md
+    - file1.txt.md
+    file: file1.txt

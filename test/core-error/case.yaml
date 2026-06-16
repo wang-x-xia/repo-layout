@@ -1,0 +1,5 @@
+- name: core-error
+  cli-params: ""
+  return-code: 1
+  std-out: core-error.yaml
+  std-err: core-error_stderr.yaml

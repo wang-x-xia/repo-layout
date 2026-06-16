@@ -340,17 +340,17 @@ def load_file_metadata(
     description = None
     source = None
     
-    # Check for conflicts: if both custom sources have descriptions, use default value and warn
+    # Check for conflicts: if both custom sources have descriptions, use default value and error
     if desc_from_agents is not None and desc_from_md is not None:
         if error_collector:
-            warning_data = {
+            error_data = {
                 "file": str(file_path.relative_to(cache.config.root_path)),
                 "conflict_definitions": [
                     str(parent_agents_file.relative_to(cache.config.root_path)),
                     str(file_path.relative_to(cache.config.root_path)) + ".md"
                 ]
             }
-            error_collector.add_warning("conflict_file_description", warning_data)
+            error_collector.add_error("conflict_file_description", error_data)
         # Use default value (known_files) when conflict occurs
         description = desc_from_known
         source = "known_files"

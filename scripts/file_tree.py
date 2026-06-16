@@ -11,10 +11,7 @@ import argparse
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Add _lib to path for imports
-sys.path.insert(0, str(Path(__file__).parent / '_lib'))
-
-from file_tree import build_file_tree
+from repo_layout_lib.file_tree import build_file_tree
 from repo_layout_lib.error import ErrorCollector
 from repo_layout_lib.yaml_utils import dump
 

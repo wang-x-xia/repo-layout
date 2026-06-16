@@ -42,6 +42,11 @@ def file_tree_to_dict(tree: FileTree, show_file_meta_md: str = 'show', show_fold
     if tree.root.metadata:
         result[':meta'] = tree.root.metadata
 
+    # Handle root folder repo-layout metadata
+    if tree.root.repo_layout_meta:
+        for key, value in tree.root.repo_layout_meta.items():
+            result[key] = value
+
     # Process root folder children (is_root=True for root level files)
     for name, node in tree.root.children.items():
         result.update(_node_to_dict_entry(name, node, show_file_meta_md, show_folder_agents_md, is_root=True))
@@ -64,6 +69,10 @@ def _node_to_dict_entry(name: str, node: TreeNode, show_file_meta_md: str = 'sho
         Dictionary with a single key-value pair
     """
     if isinstance(node, FileNode):
+        # Skip repo-layout md files (configuration files, not metadata files)
+        if node.is_repo_layout_md:
+            return {}
+
         # Check if this is AGENTS.md file
         if name == 'AGENTS.md':
             if show_folder_agents_md == 'omit':
@@ -95,6 +104,11 @@ def _node_to_dict_entry(name: str, node: TreeNode, show_file_meta_md: str = 'sho
                 return {name: description}
         else:
             # Regular file
+            # Check if repo-layout show_files is false
+            if not node.show_file_metadata:
+                # Hide file completely
+                return {}
+
             description = node.description if node.description is not None else YAML_BLANK
             # In hint mode, add (.md) suffix to key if file has corresponding metadata file
             key = name
@@ -138,6 +152,11 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
     # Add metadata if present
     if folder.metadata:
         children_dict[':meta'] = folder.metadata
+
+    # Add repo-layout metadata if present
+    if folder.repo_layout_meta:
+        for key, value in folder.repo_layout_meta.items():
+            children_dict[key] = value
 
     # Check if folder has only one non-meta child
     non_meta_keys = [k for k in children_dict.keys() if not k.startswith(':')]

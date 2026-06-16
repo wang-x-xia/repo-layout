@@ -1,5 +1,21 @@
 :meta:
   description: Test case - Conflict description
 AGENTS.md: AI Agents的README
-file1.txt(.md):
+conflict_file_description(+AI)/:
+  :meta:
+    description: Test conflict description
+  file1.txt(.md):
+conflict_repo_layout_coverage/:
+  :layout-conflict1: Test
+  :layout-conflict2: Test
+  test.txt:
+conflict_repo_layout_meta/:
+  :layout-conflict_meta: Test
+invalid_repo_layout_field/:
+  invalid_field.md:
+  test.txt:
+invalid_repo_layout_pattern/:
+  exclude_only.md:
+  no_pattern.md:
+  test.txt:
 

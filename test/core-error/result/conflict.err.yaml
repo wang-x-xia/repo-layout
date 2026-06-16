@@ -2,6 +2,37 @@ errors:
 - code: conflict_file_description
   data:
     conflict_definitions:
-    - AGENTS.md
-    - file1.txt.md
-    file: file1.txt
+    - conflict_file_description\AGENTS.md
+    - conflict_file_description\file1.txt.md
+    file: conflict_file_description\file1.txt
+- code: conflict_repo_layout_coverage
+  data:
+    covering_repo_layouts:
+    - conflict_repo_layout_coverage\layout1.md
+    - conflict_repo_layout_coverage\layout2.md
+    file: conflict_repo_layout_coverage\test.txt
+- code: conflict_repo_layout_meta
+  data:
+    conflicting_keys:
+    - :layout-conflict_meta
+    folder: conflict_repo_layout_meta
+    sources:
+    - conflict_repo_layout_meta\layout2.md
+- code: invalid_repo_layout_field
+  data:
+    allowed_fields:
+    - exclude
+    - files
+    - include
+    - meta
+    - show_files
+    file: invalid_repo_layout_field\invalid_field.md
+    invalid_field: invalid_field
+- code: invalid_repo_layout_pattern
+  data:
+    error: No matching pattern specified
+    file: invalid_repo_layout_pattern\exclude_only.md
+- code: invalid_repo_layout_pattern
+  data:
+    error: No matching pattern specified
+    file: invalid_repo_layout_pattern\no_pattern.md

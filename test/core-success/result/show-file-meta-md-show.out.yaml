@@ -5,6 +5,13 @@ file1.txt: Description from AGENTS.md files field
 file2.txt: Description from .md file
 file2.txt.md:
 file3.txt:
+md_repo_layout(+AI)/:
+  :layout-layout_files: Test
+  :layout-layout_include: Test
+  :layout-layout_include_exclude: Test
+  :meta:
+    description: Test directory for repo-layout md files
+  include_exclude_not_matched.txt: Matched by include but excluded
 nested/nested/:
   nested/nested/single_file.txt:
   nested_b/nested/:

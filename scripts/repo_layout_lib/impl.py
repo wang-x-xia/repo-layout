@@ -6,6 +6,7 @@ with support for tags, gitignore patterns, and progressive loading.
 """
 
 import yaml
+import fnmatch
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Set, Union
 from pathlib import Path
@@ -19,6 +20,9 @@ class FileNode:
     description: Optional[str] = None
     meta_type: Optional[str] = None  # Type of metadata file (e.g., "md"), None if not a metadata file
     has_meta_type: Optional[str] = None  # Type of metadata file this file has (e.g., "md"), None if none
+    repo_layout_md: Optional[Path] = None  # Path to repo-layout md file that covers this file
+    show_file_metadata: bool = True  # Whether to show file metadata (controlled by repo-layout show_files)
+    is_repo_layout_md: bool = False  # Whether this file is a repo-layout md file
 
 
 @dataclass
@@ -28,6 +32,7 @@ class FolderNode:
     children: Dict[str, 'TreeNode'] = field(default_factory=dict)
     metadata: Optional[Dict[str, Any]] = None
     has_agents_md: bool = False  # Whether folder has AGENTS.md file
+    repo_layout_meta: Optional[Dict[str, Any]] = None  # Additional metadata from repo-layout md files
 
 
 # Type alias for tree nodes (can be either file or folder)
@@ -52,6 +57,17 @@ class WhenCondition:
     """Represents a when condition from frontmatter."""
     tag: Union[str, List[str]]
     show_files: bool
+
+
+@dataclass
+class RepoLayoutMetadata:
+    """Metadata for repo-layout frontmatter in markdown files."""
+    path: Path
+    files: List[str] = field(default_factory=list)  # Exact file matches
+    include: List[str] = field(default_factory=list)  # Glob patterns for whitelist
+    exclude: List[str] = field(default_factory=list)  # Glob patterns for blacklist
+    show_files: bool = True  # Whether to show metadata for covered files
+    meta: Dict[str, Any] = field(default_factory=dict)  # Custom metadata to output
 
 
 @dataclass
@@ -117,6 +133,8 @@ class MetadataCache:
     file_metadata: Dict[Path, FileMetadata] = field(default_factory=dict)
     git_ignored_files: Set[str] = field(default_factory=set)
     known_files: Dict[str, Any] = field(default_factory=dict)
+    repo_layout_metadata: Dict[Path, RepoLayoutMetadata] = field(default_factory=dict)  # repo-layout md files
+    file_to_repo_layout: Dict[Path, Path] = field(default_factory=dict)  # file -> repo-layout md file mapping
     
     def get_folder_metadata(self, path: Path) -> Optional[FolderMetadata]:
         """Get cached folder metadata for a path."""
@@ -189,6 +207,110 @@ def parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
     except Exception:
         # If parsing fails, return None
         return None
+
+
+def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, error_collector: Optional[Any] = None) -> Optional[RepoLayoutMetadata]:
+    """
+    Parse repo-layout frontmatter from a markdown file.
+
+    Args:
+        frontmatter: Parsed frontmatter dictionary
+        md_file_path: Path to the markdown file
+        error_collector: Optional ErrorCollector for validation errors
+
+    Returns:
+        RepoLayoutMetadata object if repo-layout field exists, None otherwise
+    """
+    if not frontmatter or 'repo-layout' not in frontmatter:
+        return None
+
+    repo_layout_data = frontmatter['repo-layout']
+    if not isinstance(repo_layout_data, dict):
+        return None
+
+    # Validate that only allowed fields are present
+    allowed_fields = {'files', 'include', 'exclude', 'show_files', 'meta'}
+    for field in repo_layout_data.keys():
+        if field not in allowed_fields:
+            if error_collector:
+                error_data = {
+                    "file": str(md_file_path),
+                    "invalid_field": field,
+                    "allowed_fields": sorted(allowed_fields)
+                }
+                error_collector.add_error("invalid_repo_layout_field", error_data)
+            return None
+
+    # Validate that at least one pattern is present
+    has_files = bool(repo_layout_data.get('files'))
+    has_include = bool(repo_layout_data.get('include'))
+    has_exclude = bool(repo_layout_data.get('exclude'))
+
+    # Valid patterns: files, include-only, or include+exclude
+    if not has_files and not has_include:
+        if error_collector:
+            error_data = {
+                "file": str(md_file_path),
+                "error": "No matching pattern specified"
+            }
+            error_collector.add_error("invalid_repo_layout_pattern", error_data)
+        return None
+
+    if has_include and not has_exclude:
+        # include-only pattern is valid
+        pass
+    elif has_include and has_exclude:
+        # include+exclude pattern is valid
+        pass
+    elif has_exclude and not has_include:
+        # exclude without include is invalid
+        if error_collector:
+            error_data = {
+                "file": str(md_file_path),
+                "error": "exclude without include is not allowed"
+            }
+            error_collector.add_error("invalid_repo_layout_pattern", error_data)
+        return None
+
+    return RepoLayoutMetadata(
+        path=md_file_path,
+        files=repo_layout_data.get('files', []),
+        include=repo_layout_data.get('include', []),
+        exclude=repo_layout_data.get('exclude', []),
+        show_files=repo_layout_data.get('show_files', True),
+        meta=repo_layout_data.get('meta', {})
+    )
+
+
+def match_file_patterns(filename: str, repo_layout: RepoLayoutMetadata) -> bool:
+    """
+    Check if a filename matches the repo-layout patterns.
+
+    Args:
+        filename: Name of the file to check
+        repo_layout: RepoLayoutMetadata with patterns
+
+    Returns:
+        True if file matches, False otherwise
+    """
+    # Check exact matches first
+    if filename in repo_layout.files:
+        return True
+
+    # Check include patterns
+    if repo_layout.include:
+        for pattern in repo_layout.include:
+            if fnmatch.fnmatch(filename, pattern):
+                # Check if not excluded
+                excluded = False
+                for exclude_pattern in repo_layout.exclude:
+                    if fnmatch.fnmatch(filename, exclude_pattern):
+                        excluded = True
+                        break
+                if not excluded:
+                    return True
+
+    return False
 
 
 def parse_when_conditions(frontmatter: Optional[Dict[str, Any]]) -> List[WhenCondition]:
@@ -535,6 +657,38 @@ def build_file_tree_from_cache(
         """
         parent_agents_file = path / 'AGENTS.md'
 
+        # First, scan for repo-layout md files in this folder
+        repo_layout_mds = []
+        for item in sorted(path.iterdir()):
+            if item.is_file() and item.name.endswith('.md'):
+                frontmatter = parse_frontmatter(item)
+                repo_layout_meta = parse_repo_layout_frontmatter(frontmatter, item, error_collector)
+                if repo_layout_meta:
+                    repo_layout_mds.append(repo_layout_meta)
+                    cache.repo_layout_metadata[item] = repo_layout_meta
+
+        # Collect all repo-layout meta fields (merge with conflict detection)
+        folder_repo_layout_meta = {}
+        for rl_meta in repo_layout_mds:
+            for key, value in rl_meta.meta.items():
+                if key in folder_repo_layout_meta:
+                    # Conflict detected
+                    if error_collector:
+                        error_data = {
+                            "folder": str(path.relative_to(root)),
+                            "conflicting_keys": [key],
+                            "sources": [
+                                str(rl_meta.path.relative_to(root))
+                            ]
+                        }
+                        error_collector.add_error("conflict_repo_layout_meta", error_data)
+                    # Keep first value
+                else:
+                    folder_repo_layout_meta[key] = value
+
+        if folder_repo_layout_meta:
+            folder_node.repo_layout_meta = folder_repo_layout_meta
+
         try:
             for item in sorted(path.iterdir()):
                 # Skip default ignore patterns
@@ -548,16 +702,47 @@ def build_file_tree_from_cache(
                         continue
 
                 if item.is_file():
+                    # Check if this file is a repo-layout md file
+                    is_repo_layout_md = item in cache.repo_layout_metadata
+
+                    # Check if this file is covered by any repo-layout md
+                    covering_repo_layouts = []
+                    for rl_meta in repo_layout_mds:
+                        if match_file_patterns(item.name, rl_meta):
+                            covering_repo_layouts.append(rl_meta)
+
+                    # Handle conflict: multiple repo-layout md files covering the same file
+                    if len(covering_repo_layouts) > 1:
+                        if error_collector:
+                            error_data = {
+                                "file": str(item.relative_to(root)),
+                                "covering_repo_layouts": [str(rl.path.relative_to(root)) for rl in covering_repo_layouts]
+                            }
+                            error_collector.add_error("conflict_repo_layout_coverage", error_data)
+                        # Reset to no coverage
+                        covering_repo_layouts = []
+
                     # Load file metadata
                     file_metadata = load_file_metadata(
                         cache, item, parent_agents_file, error_collector
                     )
                     cache.set_file_metadata(item, file_metadata)
+
+                    # Set repo_layout_md and show_file_metadata if covered
+                    repo_layout_md_path = None
+                    show_file_metadata = True
+                    if covering_repo_layouts:
+                        repo_layout_md_path = covering_repo_layouts[0].path
+                        show_file_metadata = covering_repo_layouts[0].show_files
+
                     # Add file node to folder
                     folder_node.children[item.name] = FileNode(
                         name=item.name,
                         description=file_metadata.description,
-                        meta_type=get_meta_file_type(item.name)
+                        meta_type=get_meta_file_type(item.name),
+                        repo_layout_md=repo_layout_md_path,
+                        show_file_metadata=show_file_metadata,
+                        is_repo_layout_md=is_repo_layout_md
                     )
 
                 elif item.is_dir():

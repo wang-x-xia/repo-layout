@@ -1,0 +1,6 @@
+AGENTS.md:
+  description: AI Agents的README
+__init__.py:
+  description: Python包初始化文件
+SKILL.md:
+  description: Agent Skill描述文件

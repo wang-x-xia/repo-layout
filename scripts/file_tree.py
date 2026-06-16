@@ -6,11 +6,79 @@
 # ///
 
 import os
+import sys
 import argparse
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, Optional
 from repo_layout_lib.git import is_git_repo, get_git_ignored_files
+from repo_layout_lib.known_files import load_known_files, get_file_description
+
+# Set stdout encoding to UTF-8 for Windows compatibility
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+
+def sort_tree_with_metadata(tree: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Sort tree dictionary with metadata keys (starting with :) first.
+
+    Args:
+        tree: The tree dictionary to sort
+
+    Returns:
+        Sorted tree dictionary
+    """
+    if not isinstance(tree, dict):
+        return tree
+
+    # Separate keys into metadata keys (starting with :) and regular keys
+    meta_keys = [k for k in tree.keys() if k.startswith(':')]
+    regular_keys = [k for k in tree.keys() if not k.startswith(':')]
+
+    # Sort both groups
+    meta_keys.sort()
+    regular_keys.sort()
+
+    # Build new sorted dictionary
+    sorted_tree = {}
+    for key in meta_keys + regular_keys:
+        value = tree[key]
+        if isinstance(value, dict):
+            # Recursively sort nested dictionaries
+            sorted_tree[key] = sort_tree_with_metadata(value)
+        else:
+            sorted_tree[key] = value
+
+    return sorted_tree
+
+def parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
+    """
+    Parse YAML frontmatter from a markdown file.
+
+    Args:
+        file_path: Path to the markdown file
+
+    Returns:
+        Parsed frontmatter as a dictionary, or None if no frontmatter found
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Check if file starts with ---
+        if not content.startswith('---'):
+            return None
+
+        # Find the end of frontmatter (second ---)
+        end_marker = content.find('\n---', 4)
+        if end_marker == -1:
+            return None
+
+        frontmatter_content = content[4:end_marker]
+        return yaml.safe_load(frontmatter_content)
+    except Exception:
+        # If parsing fails, return None
+        return None
 
 def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any]:
     """
@@ -31,6 +99,10 @@ def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any
     if use_gitignore and is_git_repo(root_path):
         ignored_files = get_git_ignored_files(root_path)
 
+    # Load known files descriptions using script-relative path
+    script_path = Path(__file__)
+    known_files = load_known_files(script_path, locale="zh-CN")
+
     root = Path(root_path)
     tree = {}
 
@@ -50,17 +122,35 @@ def build_file_tree(root_path: str, use_gitignore: bool = True) -> Dict[str, Any
                         continue
 
                 if item.is_file():
-                    # Add file with empty value
-                    current_tree[item.name] = None
+                    # Add file with description if known, otherwise empty value
+                    description = get_file_description(known_files, item.name)
+                    current_tree[item.name] = description if description else None
                 elif item.is_dir():
                     # Create subtree for directory
                     current_tree[item.name] = {}
                     scan_directory(item, current_tree[item.name])
+
+                    # Check for AGENTS.md and parse its frontmatter
+                    agents_file = item / 'AGENTS.md'
+                    if agents_file.exists():
+                        frontmatter = parse_frontmatter(agents_file)
+                        if frontmatter and 'folder_meta' in frontmatter:
+                            # Add folder_meta with :meta key (colon is illegal in filenames)
+                            current_tree[item.name][':meta'] = frontmatter['folder_meta']
         except PermissionError:
             # Skip directories we don't have permission to access
             pass
 
     scan_directory(root, tree)
+
+    # Check for AGENTS.md in root directory and parse its frontmatter
+    agents_file = root / 'AGENTS.md'
+    if agents_file.exists():
+        frontmatter = parse_frontmatter(agents_file)
+        if frontmatter and 'folder_meta' in frontmatter:
+            # Add folder_meta with :meta key (colon is illegal in filenames)
+            tree[':meta'] = frontmatter['folder_meta']
+
     return tree
 
 def main():
@@ -75,9 +165,12 @@ def main():
     use_gitignore = not args.no_gitignore
     
     tree = build_file_tree(root_path, use_gitignore)
-    
+
+    # Sort tree with metadata keys first
+    sorted_tree = sort_tree_with_metadata(tree)
+
     # Output as YAML
-    yaml_output = yaml.dump(tree, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    yaml_output = yaml.dump(sorted_tree, default_flow_style=False, sort_keys=False, allow_unicode=True)
     print(yaml_output)
 
 if __name__ == "__main__":

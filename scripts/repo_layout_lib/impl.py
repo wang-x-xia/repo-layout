@@ -27,6 +27,7 @@ class FolderNode:
     name: str
     children: Dict[str, 'TreeNode'] = field(default_factory=dict)
     metadata: Optional[Dict[str, Any]] = None
+    has_agents_md: bool = False  # Whether folder has AGENTS.md file
 
 
 # Type alias for tree nodes (can be either file or folder)
@@ -522,7 +523,7 @@ def build_file_tree_from_cache(
     load_folder_metadata_recursive(cache, cache.config.root_path)
 
     root = cache.config.root_path
-    root_folder = FolderNode(name=root.name, children={}, metadata=None)
+    root_folder = FolderNode(name=root.name, children={}, metadata=None, has_agents_md=(cache.root_metadata is not None))
 
     def build_tree_recursive(path: Path, folder_node: FolderNode) -> None:
         """
@@ -573,14 +574,16 @@ def build_file_tree_from_cache(
                         folder_node.children[item.name] = FolderNode(
                             name=item.name,
                             children={},
-                            metadata=folder_metadata.folder_meta
+                            metadata=folder_metadata.folder_meta,
+                            has_agents_md=(folder_metadata is not None)
                         )
                     else:
                         # Create folder node and recurse
                         child_folder = FolderNode(
                             name=item.name,
                             children={},
-                            metadata=folder_metadata.folder_meta if folder_metadata else None
+                            metadata=folder_metadata.folder_meta if folder_metadata else None,
+                            has_agents_md=(folder_metadata is not None)
                         )
                         folder_node.children[item.name] = child_folder
                         build_tree_recursive(item, child_folder)

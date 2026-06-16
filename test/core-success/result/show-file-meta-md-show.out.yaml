@@ -8,9 +8,8 @@ file3.txt:
 nested/nested/:
   nested/nested/single_file.txt:
   nested_b/nested/:
-tags/:
+tags(+AI)/:
   :meta:
     description: Test directory for custom tags
-  AGENTS.md: AI Agents的README
 test.log:
 

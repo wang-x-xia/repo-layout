@@ -20,3 +20,13 @@
 - name: show-file-meta-md-show
   cli-params: "--show-file-meta-md show"
   return-code: 0
+- name: show-folder-agents-md-omit
+  cli-params: "--show-folder-agents-md omit"
+  return-code: 0
+- name: show-folder-agents-md-hint
+  cli-params: "--show-folder-agents-md hint"
+  return-code: 0
+  std-out: no-param.out.yaml
+- name: show-folder-agents-md-show
+  cli-params: "--show-folder-agents-md show"
+  return-code: 0

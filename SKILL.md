@@ -27,6 +27,9 @@ uv run scripts/file_tree.py /path/to/directory
 
 # 禁用 .gitignore 过滤
 uv run scripts/file_tree.py /path/to/directory --no-gitignore
+
+# 使用 tags 显示不同类别的信息，默认是[standard]，支持多个
+uv run scripts/file_tree.py --tags tag1 tag2
 ```
 
 ## 给文件夹添加元数据
@@ -52,3 +55,19 @@ folder_meta:
 AGENTS.md: null
 其他文件...
 ```
+
+## when 条件过滤
+
+可以使用 `when` 字段来根据 tags 过滤文件显示：
+
+```yaml
+---
+folder_meta:
+    description: Repo Root
+when:
+  - tag: [standard]
+    show_files: false
+---
+```
+
+当提供的 tags 包含 `standard` 时，该文件夹的文件明细将被隐藏，只显示 `folder_meta` 的内容。

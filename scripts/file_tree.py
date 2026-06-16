@@ -101,13 +101,46 @@ def get_file_description_from_md_file(file_path: Path) -> Optional[str]:
 
     return frontmatter['description']
 
-def build_file_tree(root_path: str, use_gitignore: bool = True, error_collector: Optional[ErrorCollector] = None) -> Dict[str, Any]:
+def check_when_condition(frontmatter: Optional[Dict[str, Any]], tags: Optional[list]) -> bool:
+    """
+    Check if the when condition in frontmatter matches the given tags.
+
+    Args:
+        frontmatter: Parsed frontmatter dictionary
+        tags: List of tags to check against
+
+    Returns:
+        True if condition matches (show_files should be false), False otherwise
+    """
+    if not frontmatter or 'when' not in frontmatter:
+        return False
+    if not tags:
+        return False
+
+    when_conditions = frontmatter['when']
+    if not isinstance(when_conditions, list):
+        return False
+
+    for condition in when_conditions:
+        if not isinstance(condition, dict):
+            continue
+        if 'tag' in condition and 'show_files' in condition:
+            condition_tags = condition['tag']
+            if isinstance(condition_tags, list):
+                # Check if any of the condition tags is in the provided tags
+                if any(tag in tags for tag in condition_tags):
+                    return condition['show_files'] == False
+
+    return False
+
+def build_file_tree(root_path: str, use_gitignore: bool = True, tags: Optional[list] = None, error_collector: Optional[ErrorCollector] = None) -> Dict[str, Any]:
     """
     Build a tree structure of all files in the directory.
 
     Args:
         root_path: The root directory path to scan
         use_gitignore: Whether to use .gitignore patterns for filtering
+        tags: Optional list of tags to filter file display based on when conditions
         error_collector: Optional ErrorCollector to collect warnings and errors
 
     Returns:
@@ -177,16 +210,25 @@ def build_file_tree(root_path: str, use_gitignore: bool = True, error_collector:
 
                     current_tree[item.name] = description if description else None
                 elif item.is_dir():
-                    # Create subtree for directory
-                    current_tree[item.name] = {}
-                    scan_directory(item, current_tree[item.name])
-
                     # Check for AGENTS.md in the subdirectory and parse its frontmatter
                     sub_agents_file = item / 'AGENTS.md'
+                    frontmatter = None
                     if sub_agents_file.exists():
                         frontmatter = parse_frontmatter(sub_agents_file)
+
+                    # Check if when condition matches (show_files should be false)
+                    should_hide_files = check_when_condition(frontmatter, tags)
+
+                    if should_hide_files and frontmatter and 'folder_meta' in frontmatter:
+                        # When condition matches, use folder_meta directly as the value
+                        current_tree[item.name] = frontmatter['folder_meta']
+                    else:
+                        # Create subtree for directory
+                        current_tree[item.name] = {}
+                        scan_directory(item, current_tree[item.name])
+
+                        # Add folder_meta with :meta key (colon is illegal in filenames)
                         if frontmatter and 'folder_meta' in frontmatter:
-                            # Add folder_meta with :meta key (colon is illegal in filenames)
                             current_tree[item.name][':meta'] = frontmatter['folder_meta']
         except PermissionError:
             # Skip directories we don't have permission to access
@@ -199,8 +241,15 @@ def build_file_tree(root_path: str, use_gitignore: bool = True, error_collector:
     if agents_file.exists():
         frontmatter = parse_frontmatter(agents_file)
         if frontmatter and 'folder_meta' in frontmatter:
-            # Add folder_meta with :meta key (colon is illegal in filenames)
-            tree[':meta'] = frontmatter['folder_meta']
+            # Check if when condition matches (show_files should be false)
+            should_hide_files = check_when_condition(frontmatter, tags)
+
+            if should_hide_files:
+                # When condition matches, replace entire tree with folder_meta
+                tree = frontmatter['folder_meta']
+            else:
+                # Add folder_meta with :meta key (colon is illegal in filenames)
+                tree[':meta'] = frontmatter['folder_meta']
 
     return tree
 
@@ -210,15 +259,18 @@ def main():
                        help='Path to the directory to scan (default: current directory)')
     parser.add_argument('--no-gitignore', action='store_true',
                        help='Disable .gitignore filtering (default: enabled)')
+    parser.add_argument('--tags', nargs='*', default=['standard'],
+                       help='Tags to filter file display (default: standard, use empty list to show all files)')
 
     args = parser.parse_args()
     root_path = args.path
     use_gitignore = not args.no_gitignore
+    tags = args.tags
 
     error_collector = ErrorCollector()
 
     try:
-        tree = build_file_tree(root_path, use_gitignore, error_collector)
+        tree = build_file_tree(root_path, use_gitignore, tags, error_collector)
 
         # Output as YAML with metadata sorting
         yaml_output = dump(tree)

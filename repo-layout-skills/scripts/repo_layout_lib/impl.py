@@ -279,9 +279,9 @@ def load_folder_metadata_recursive(cache: MetadataCache, path: Path, error_colle
     """
     Recursively load folder metadata for a path and its subdirectories.
     
-    This function loads metadata independently for each folder - it doesn't depend
-    on parent folder configuration. The parent folder only decides whether to
-    display its own contents, not whether to load metadata.
+    This function now respects parent folder configuration - if a folder has
+    show_files: false in its when condition, it will skip loading metadata
+    from its subdirectories.
     
     Args:
         cache: MetadataCache to populate with folder metadata
@@ -289,13 +289,23 @@ def load_folder_metadata_recursive(cache: MetadataCache, path: Path, error_colle
         error_collector: Optional ErrorCollector for validation errors
     """
     try:
+        # Load metadata for current folder first
+        metadata = load_folder_metadata(path, error_collector)
+        if metadata:
+            cache.set_folder_metadata(path, metadata)
+        
+        # Check if we should skip loading subdirectory metadata
+        should_skip_subdirs = False
+        if metadata:
+            should_skip_subdirs = metadata.should_hide_files(cache.config.tags)
+        
+        # If show_files is false, skip loading subdirectory metadata
+        if should_skip_subdirs:
+            return
+        
+        # Load metadata for subdirectories
         for item in sorted(path.iterdir()):
             if item.is_dir():
-                # Load metadata for this subdirectory
-                metadata = load_folder_metadata(item, error_collector)
-                if metadata:
-                    cache.set_folder_metadata(item, metadata)
-                
                 # Recursively load metadata for subdirectories
                 load_folder_metadata_recursive(cache, item, error_collector)
     except PermissionError:

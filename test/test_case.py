@@ -31,7 +31,7 @@ def load_case_yaml(case_path: Path) -> List[Dict[str, Any]]:
 
 def run_command(cli_params: str, working_dir: Path) -> tuple[int, str, str]:
     """Run command and return return code, stdout, stderr."""
-    base_cmd = "uv run --quiet ../../../scripts/file_tree.py ."
+    base_cmd = "uv run --quiet ../../../repo-layout-skills/scripts/file_tree.py ."
     if cli_params:
         cmd = f"{base_cmd} {cli_params}"
     else:

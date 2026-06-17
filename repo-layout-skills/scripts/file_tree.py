@@ -2,6 +2,7 @@
 # requires-python = ">=3.8"
 # dependencies = [
 #     "pyyaml",
+#     "pydantic>=2.0",
 # ]
 # ///
 
@@ -33,18 +34,18 @@ def file_tree_to_dict(tree: FileTree, show_file_meta_md: str = 'show', show_fold
         Dictionary formatted for YAML output
     """
     # Handle when condition at root level (show_files: false)
-    if tree.metadata:
-        return tree.metadata
+    if tree.meta:
+        return tree.meta
 
     result = {}
 
     # Handle root folder metadata
-    if tree.root.metadata:
-        result[':meta'] = tree.root.metadata
+    if tree.root.meta:
+        result[':meta'] = tree.root.meta
 
     # Handle root folder repo-layout metadata
-    if tree.root.repo_layout_meta:
-        for key, value in tree.root.repo_layout_meta.items():
+    if tree.root.merged_meta_from_md:
+        for key, value in tree.root.merged_meta_from_md.items():
             result[key] = value
 
     # Process root folder children (is_root=True for root level files)
@@ -137,12 +138,12 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
         Dictionary with a single key-value pair (formatted)
     """
     # Handle when condition with show_files: false (no children, only metadata)
-    if folder.metadata and not folder.children:
+    if folder.meta and not folder.children:
         folder_key = f"{name}/"
         # In hint mode, add (+AI) suffix if folder has AGENTS.md
         if show_folder_agents_md == 'hint' and folder.has_agents_md:
             folder_key = f"{name}(+AI)/"
-        return {folder_key: folder.metadata}
+        return {folder_key: folder.meta}
 
     # Process children recursively (children are not at root level)
     children_dict = {}
@@ -150,12 +151,12 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
         children_dict.update(_node_to_dict_entry(child_name, child_node, show_file_meta_md, show_folder_agents_md, is_root=False))
 
     # Add metadata if present
-    if folder.metadata:
-        children_dict[':meta'] = folder.metadata
+    if folder.meta:
+        children_dict[':meta'] = folder.meta
 
     # Add repo-layout metadata if present
-    if folder.repo_layout_meta:
-        for key, value in folder.repo_layout_meta.items():
+    if folder.merged_meta_from_md:
+        for key, value in folder.merged_meta_from_md.items():
             children_dict[key] = value
 
     # Check if folder has only one non-meta child
@@ -191,7 +192,7 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
     else:
         # Multiple children or no children, keep folder with '/' suffix
         # Use YAML_BLANK for empty folders (no children and no metadata)
-        if not folder.children and not folder.metadata:
+        if not folder.children and not folder.meta:
             folder_key = f"{name}/"
             # In hint mode, add (+AI) suffix if folder has AGENTS.md
             if show_folder_agents_md == 'hint' and folder.has_agents_md:

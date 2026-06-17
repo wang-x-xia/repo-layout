@@ -5,229 +5,41 @@ This module provides a structured approach to loading and caching file/folder me
 with support for tags, gitignore patterns, and progressive loading.
 """
 
-import yaml
 import fnmatch
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List, Set, Union
+from typing import Dict, Any, Optional, List
 from pathlib import Path
-from enum import Enum
+
+from .yaml_utils import parse_frontmatter
+from .models import (
+    FileNode,
+    FolderNode,
+    TreeNode,
+    FileTree,
+    VisibilityState,
+    WhenCondition,
+    HintMetadata,
+    FolderMetadata,
+    FileMetadata,
+    LoadConfig,
+    MetadataCache,
+    NamePatterns
+)
+from .error import RepoLayoutValidationError
 
 
-@dataclass
-class FileNode:
-    """Represents a file in the tree."""
-    name: str
-    description: Optional[str] = None
-    meta_type: Optional[str] = None  # Type of metadata file (e.g., "md"), None if not a metadata file
-    has_meta_type: Optional[str] = None  # Type of metadata file this file has (e.g., "md"), None if none
-    repo_layout_md: Optional[Path] = None  # Path to repo-layout md file that covers this file
-    show_file_metadata: bool = True  # Whether to show file metadata (controlled by repo-layout show_files)
-    is_repo_layout_md: bool = False  # Whether this file is a repo-layout md file
-
-
-@dataclass
-class FolderNode:
-    """Represents a folder in the tree."""
-    name: str
-    children: Dict[str, 'TreeNode'] = field(default_factory=dict)
-    metadata: Optional[Dict[str, Any]] = None
-    has_agents_md: bool = False  # Whether folder has AGENTS.md file
-    repo_layout_meta: Optional[Dict[str, Any]] = None  # Additional metadata from repo-layout md files
-
-
-# Type alias for tree nodes (can be either file or folder)
-TreeNode = Union[FileNode, FolderNode]
-
-
-@dataclass
-class FileTree:
-    """Root of the file tree."""
-    root: FolderNode
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class VisibilityState(Enum):
-    """Visibility state for folders based on when conditions."""
-    VISIBLE = "visible"
-    HIDDEN = "hidden"
-
-
-@dataclass
-class WhenCondition:
-    """Represents a when condition from frontmatter."""
-    tag: Union[str, List[str]]
-    show_files: bool
-
-
-@dataclass
-class RepoLayoutMetadata:
-    """Metadata for repo-layout frontmatter in markdown files."""
-    path: Path
-    files: List[str] = field(default_factory=list)  # Exact file matches
-    include: List[str] = field(default_factory=list)  # Glob patterns for whitelist
-    exclude: List[str] = field(default_factory=list)  # Glob patterns for blacklist
-    show_files: bool = True  # Whether to show metadata for covered files
-    meta: Dict[str, Any] = field(default_factory=dict)  # Custom metadata to output
-
-
-@dataclass
-class FolderMetadata:
-    """Metadata for a folder parsed from AGENTS.md frontmatter."""
-    path: Path
-    meta: Optional[Dict[str, Any]] = None  # Renamed from folder_meta
-    when_conditions: List[WhenCondition] = field(default_factory=list)
-    files_field: Optional[Dict[str, str]] = None
-    visibility_state: VisibilityState = VisibilityState.VISIBLE
-    entry_point: Optional[str] = None  # New field
-    name_patterns: Optional[Dict[str, Any]] = None  # New field
-    show_files: bool = True  # Default is true
-    
-    def should_hide_files(self, tags: Optional[List[str]]) -> bool:
-        """
-        Check if files should be hidden based on when conditions and tags.
-
-        Args:
-            tags: List of tags to check against
-
-        Returns:
-            True if files should be hidden, False otherwise
-        """
-        # First check meta.show_files
-        if not self.show_files:
-            return True
-
-        # Then check when conditions
-        if not tags or not self.when_conditions:
-            return False
-
-        for condition in self.when_conditions:
-            # Handle both string and list tags
-            condition_tags = condition.tag if isinstance(condition.tag, list) else [condition.tag]
-            # Check if any of the condition tags is in the provided tags
-            if any(tag in tags for tag in condition_tags) and not condition.show_files:
-                return True
-        return False
-
-
-@dataclass
-class FileMetadata:
-    """Metadata for a file from multiple sources."""
-    path: Path
-    description: Optional[str] = None
-    source: Optional[str] = None  # 'agents', 'md_file', 'known_files', or None
-
-
-@dataclass
-class LoadConfig:
-    """Configuration for metadata loading."""
-    root_path: Path
-    use_gitignore: bool = True
-    tags: Optional[List[str]] = None
-    ignore_patterns: List[str] = field(default_factory=lambda: [
-        '.git', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', 'build'
-    ])
-    
-    def __post_init__(self):
-        if self.tags is None:
-            self.tags = ['standard']
-
-
-@dataclass
-class MetadataCache:
-    """Cache for all loaded metadata during file tree construction."""
-    config: LoadConfig
-    root_metadata: Optional[FolderMetadata] = None
-    folder_metadata: Dict[Path, FolderMetadata] = field(default_factory=dict)
-    file_metadata: Dict[Path, FileMetadata] = field(default_factory=dict)
-    git_ignored_files: Set[str] = field(default_factory=set)
-    known_files: Dict[str, Any] = field(default_factory=dict)
-    repo_layout_metadata: Dict[Path, RepoLayoutMetadata] = field(default_factory=dict)  # repo-layout md files
-    file_to_repo_layout: Dict[Path, Path] = field(default_factory=dict)  # file -> repo-layout md file mapping
-    
-    def get_folder_metadata(self, path: Path) -> Optional[FolderMetadata]:
-        """Get cached folder metadata for a path."""
-        return self.folder_metadata.get(path)
-    
-    def set_folder_metadata(self, path: Path, metadata: FolderMetadata) -> None:
-        """Cache folder metadata for a path."""
-        self.folder_metadata[path] = metadata
-    
-    def get_file_metadata(self, path: Path) -> Optional[FileMetadata]:
-        """Get cached file metadata for a path."""
-        return self.file_metadata.get(path)
-    
-    def set_file_metadata(self, path: Path, metadata: FileMetadata) -> None:
-        """Cache file metadata for a path."""
-        self.file_metadata[path] = metadata
-    
-    def is_git_ignored(self, relative_path: str, is_dir: bool = False) -> bool:
-        """
-        Check if a path is git ignored.
-        
-        Args:
-            relative_path: Relative path from root
-            is_dir: Whether the path is a directory
-            
-        Returns:
-            True if ignored, False otherwise
-        """
-        check_path = relative_path + '/' if is_dir else relative_path
-        return check_path in self.git_ignored_files or relative_path in self.git_ignored_files
-    
-    def is_default_ignored(self, name: str) -> bool:
-        """
-        Check if a name matches default ignore patterns.
-        
-        Args:
-            name: File or directory name
-            
-        Returns:
-            True if should be ignored, False otherwise
-        """
-        return any(pattern in name for pattern in self.config.ignore_patterns)
-
-
-def parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
+def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
     """
-    Parse YAML frontmatter from a markdown file.
+    Parse repo-layout frontmatter from AGENTS.md file.
 
-    Args:
-        file_path: Path to the markdown file
-
-    Returns:
-        Parsed frontmatter as a dictionary, or None if no frontmatter found
-    """
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # Check if file starts with ---
-        if not content.startswith('---'):
-            return None
-
-        # Find the end of frontmatter (second ---)
-        end_marker = content.find('\n---', 4)
-        if end_marker == -1:
-            return None
-
-        frontmatter_content = content[4:end_marker]
-        return yaml.safe_load(frontmatter_content)
-    except Exception:
-        # If parsing fails, return None
-        return None
-
-
-def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, error_collector: Optional[Any] = None) -> Optional[RepoLayoutMetadata]:
-    """
-    Parse repo-layout frontmatter from a markdown file.
+    AGENTS.md contains folder-level metadata (meta, when, entry_point, name_patterns, files).
 
     Args:
         frontmatter: Parsed frontmatter dictionary
-        md_file_path: Path to the markdown file
+        md_file_path: Path to the AGENTS.md file
         error_collector: Optional ErrorCollector for validation errors
 
     Returns:
-        RepoLayoutMetadata object if repo-layout field exists, None otherwise
+        FolderMetadata object if repo-layout field exists, None otherwise
     """
     if not frontmatter or 'repo-layout' not in frontmatter:
         return None
@@ -236,72 +48,65 @@ def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file
     if not isinstance(repo_layout_data, dict):
         return None
 
-    # Validate that only allowed fields are present
-    allowed_fields = {'files', 'include', 'exclude', 'show_files', 'meta', 'when'}
-    for field in repo_layout_data.keys():
-        if field not in allowed_fields:
-            if error_collector:
-                error_data = {
-                    "file": str(md_file_path),
-                    "invalid_field": field,
-                    "allowed_fields": sorted(allowed_fields)
-                }
-                error_collector.add_error("invalid_repo_layout_field", error_data)
-            return None
+    # Add path to data for validation
+    repo_layout_data['path'] = md_file_path
 
-    # Validate that at least one pattern is present (only if this is a repo-layout md file, not AGENTS.md)
-    has_files = bool(repo_layout_data.get('files'))
-    has_include = bool(repo_layout_data.get('include'))
-    has_exclude = bool(repo_layout_data.get('exclude'))
-
-    # If no patterns are specified, this is valid for AGENTS.md (folder metadata only)
-    # Skip pattern validation if this is AGENTS.md
-    if md_file_path.name == 'AGENTS.md':
-        pass
-    else:
-        # Valid patterns: files, include-only, or include+exclude
-        if not has_files and not has_include:
-            if error_collector:
-                error_data = {
-                    "file": str(md_file_path),
-                    "pattern_type": "none"
-                }
-                error_collector.add_error("invalid_repo_layout_pattern", error_data)
-            return None
-
-        if has_include and not has_exclude:
-            # include-only pattern is valid
-            pass
-        elif has_include and has_exclude:
-            # include+exclude pattern is valid
-            pass
-        elif has_exclude and not has_include:
-            # exclude without include is invalid
-            if error_collector:
-                error_data = {
-                    "file": str(md_file_path),
-                    "pattern_type": "exclude_without_include"
-                }
-                error_collector.add_error("invalid_repo_layout_pattern", error_data)
-            return None
-
-    return RepoLayoutMetadata(
-        path=md_file_path,
-        files=repo_layout_data.get('files', []),
-        include=repo_layout_data.get('include', []),
-        exclude=repo_layout_data.get('exclude', []),
-        show_files=repo_layout_data.get('show_files', True),
-        meta=repo_layout_data.get('meta', {})
-    )
+    try:
+        # Use Pydantic's model_validate for parsing and validation
+        metadata = FolderMetadata.model_validate(repo_layout_data)
+        return metadata
+    
+    except Exception as e:
+        # Handle validation errors through error_collector
+        if error_collector:
+            error_collector.handle_validation_error(e, str(md_file_path))
+        return None
 
 
-def match_file_patterns(filename: str, repo_layout: RepoLayoutMetadata) -> bool:
+def parse_hint_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, error_collector: Optional[Any] = None) -> Optional[HintMetadata]:
+    """
+    Parse repo-layout frontmatter from a non-AGENTS.md markdown file.
+
+    Non-AGENTS.md files must have patterns (files, include, or include+exclude).
+
+    Args:
+        frontmatter: Parsed frontmatter dictionary
+        md_file_path: Path to the markdown file
+        error_collector: Optional ErrorCollector for validation errors
+
+    Returns:
+        HintMetadata object if repo-layout field exists, None otherwise
+    """
+    if not frontmatter or 'repo-layout' not in frontmatter:
+        return None
+
+    repo_layout_data = frontmatter['repo-layout']
+    if not isinstance(repo_layout_data, dict):
+        return None
+
+    # Add path to data for validation
+    repo_layout_data['path'] = md_file_path
+
+    try:
+        # Use Pydantic's model_validate for parsing and validation
+        # Pattern validation is now handled by the model's validator
+        metadata = HintMetadata.model_validate(repo_layout_data)
+        return metadata
+    
+    except Exception as e:
+        # Handle validation errors through error_collector
+        if error_collector:
+            error_collector.handle_validation_error(e, str(md_file_path))
+        return None
+
+
+def match_file_patterns(filename: str, repo_layout: HintMetadata) -> bool:
     """
     Check if a filename matches the repo-layout patterns.
 
     Args:
         filename: Name of the file to check
-        repo_layout: RepoLayoutMetadata with patterns
+        repo_layout: HintMetadata with patterns
 
     Returns:
         True if file matches, False otherwise
@@ -347,11 +152,11 @@ def parse_when_conditions(frontmatter: Optional[Dict[str, Any]]) -> List[WhenCon
     for condition in when_conditions:
         if not isinstance(condition, dict):
             continue
-        if 'tag' in condition and 'show_files' in condition:
-            conditions.append(WhenCondition(
-                tag=condition['tag'],
-                show_files=condition['show_files']
-            ))
+        try:
+            conditions.append(WhenCondition.model_validate(condition))
+        except (ValueError, TypeError):
+            # Skip invalid conditions silently
+            continue
     
     return conditions
 
@@ -375,195 +180,84 @@ def load_folder_metadata(path: Path, error_collector: Optional[Any] = None) -> O
     if not frontmatter:
         return FolderMetadata(path=path)
     
-    # Parse repo-layout structure
-    repo_layout = frontmatter.get('repo-layout')
-    if repo_layout and isinstance(repo_layout, dict):
-        meta = repo_layout.get('meta', {})
-        show_files = meta.get('show_files', True) if isinstance(meta, dict) else True
-        
-        # Validate entry_point
-        entry_point = repo_layout.get('entry_point')
-        if entry_point:
-            entry_point_path = path / entry_point
-            if not entry_point_path.exists():
-                if error_collector:
-                    error_data = {
-                        "file": str(agents_file),
-                        "entry_point": entry_point
-                    }
-                    error_collector.add_error("invalid_entry_point", error_data)
-        
-        # Validate name_patterns
-        name_patterns = repo_layout.get('name_patterns')
-        if name_patterns:
-            if not isinstance(name_patterns, dict):
-                if error_collector:
-                    error_data = {
-                        "file": str(agents_file),
-                        "field": "name_patterns",
-                        "expected_type": "dict"
-                    }
-                    error_collector.add_error("invalid_name_patterns_type", error_data)
-            else:
-                # Validate files patterns
-                if 'files' in name_patterns:
-                    files_patterns = name_patterns['files']
-                    if not isinstance(files_patterns, dict):
-                        if error_collector:
-                            error_data = {
-                                "file": str(agents_file),
-                                "field": "name_patterns.files",
-                                "expected_type": "dict"
-                            }
-                            error_collector.add_error("invalid_name_patterns_type", error_data)
-                    else:
-                        if 'include' in files_patterns:
-                            if not isinstance(files_patterns['include'], list):
+    # Parse repo-layout structure using the new parser
+    agents_repo_layout = parse_folder_metadata(frontmatter, agents_file, error_collector)
+    
+    # Even if parsing fails, try to extract basic metadata from frontmatter
+    meta = None
+    when = None
+    files = None
+    entry_point = None
+    name_patterns = None
+    show_files = True
+    
+    if agents_repo_layout:
+        meta = agents_repo_layout.meta
+        when = agents_repo_layout.when
+        files = agents_repo_layout.files
+        entry_point = agents_repo_layout.entry_point
+        name_patterns = agents_repo_layout.name_patterns
+        show_files = meta.get('show_files', True) if meta else True
+    else:
+        # Try to extract basic metadata manually if parsing failed
+        repo_layout = frontmatter.get('repo-layout')
+        if repo_layout and isinstance(repo_layout, dict):
+            meta = repo_layout.get('meta')
+            entry_point = repo_layout.get('entry_point')
+            show_files = meta.get('show_files', True) if meta else True
+    
+    # Validate entry_point
+    if entry_point:
+        entry_point_path = path / entry_point
+        if not entry_point_path.exists():
+            if error_collector:
+                error_collector.add_error("invalid_entry_point", {
+                    "file": str(agents_file),
+                    "entry_point": entry_point
+                })
+    if name_patterns:
+        try:
+            # Validate files
+            if name_patterns.files:
+                actual_files = [f.name for f in path.iterdir() if f.is_file()]
+                if name_patterns.files.include:
+                    for filename in actual_files:
+                        if not any(fnmatch.fnmatch(filename, pattern) for pattern in name_patterns.files.include):
+                            is_excluded = any(fnmatch.fnmatch(filename, pattern) for pattern in name_patterns.files.exclude)
+                            if not is_excluded:
                                 if error_collector:
-                                    error_data = {
+                                    error_collector.add_error("file_not_in_name_patterns", {
                                         "file": str(agents_file),
-                                        "field": "name_patterns.files.include",
-                                        "expected_type": "list"
-                                    }
-                                    error_collector.add_error("invalid_name_patterns_type", error_data)
-                            else:
-                                # Validate pattern strings and check against actual files
-                                for pattern in files_patterns['include']:
-                                    if not isinstance(pattern, str):
-                                        if error_collector:
-                                            error_data = {
-                                                "file": str(agents_file),
-                                                "field": "name_patterns.files.include",
-                                                "expected_type": "list_of_strings"
-                                            }
-                                            error_collector.add_error("invalid_name_patterns_type", error_data)
-                        if 'exclude' in files_patterns:
-                            if not isinstance(files_patterns['exclude'], list):
+                                        "field": "name_patterns.files",
+                                        "filename": filename
+                                    })
+            
+            # Validate folders
+            if name_patterns.folders:
+                actual_folders = [f.name for f in path.iterdir() if f.is_dir()]
+                if name_patterns.folders.include:
+                    for foldername in actual_folders:
+                        if not any(fnmatch.fnmatch(foldername, pattern) for pattern in name_patterns.folders.include):
+                            is_excluded = any(fnmatch.fnmatch(foldername, pattern) for pattern in name_patterns.folders.exclude)
+                            if not is_excluded:
                                 if error_collector:
-                                    error_data = {
+                                    error_collector.add_error("folder_not_in_name_patterns", {
                                         "file": str(agents_file),
-                                        "field": "name_patterns.files.exclude",
-                                        "expected_type": "list"
-                                    }
-                                    error_collector.add_error("invalid_name_patterns_type", error_data)
-                            else:
-                                for pattern in files_patterns['exclude']:
-                                    if not isinstance(pattern, str):
-                                        if error_collector:
-                                            error_data = {
-                                                "file": str(agents_file),
-                                                "field": "name_patterns.files.exclude",
-                                                "expected_type": "list_of_strings"
-                                            }
-                                            error_collector.add_error("invalid_name_patterns_type", error_data)
-                        
-                        # Validate actual files against patterns
-                        try:
-                            actual_files = [f.name for f in path.iterdir() if f.is_file()]
-                            if 'include' in files_patterns and isinstance(files_patterns['include'], list):
-                                include_patterns = files_patterns['include']
-                                for filename in actual_files:
-                                    if not any(fnmatch.fnmatch(filename, pattern) for pattern in include_patterns):
-                                        # Check if excluded
-                                        is_excluded = False
-                                        if 'exclude' in files_patterns and isinstance(files_patterns['exclude'], list):
-                                            is_excluded = any(fnmatch.fnmatch(filename, pattern) for pattern in files_patterns['exclude'])
-                                        if not is_excluded:
-                                            if error_collector:
-                                                error_data = {
-                                                    "file": str(agents_file),
-                                                    "field": "name_patterns.files",
-                                                    "filename": filename
-                                                }
-                                                error_collector.add_error("file_not_in_name_patterns", error_data)
-                        except PermissionError:
-                            pass
-                
-                # Validate folders patterns
-                if 'folders' in name_patterns:
-                    folders_patterns = name_patterns['folders']
-                    if not isinstance(folders_patterns, dict):
-                        if error_collector:
-                            error_data = {
-                                "file": str(agents_file),
-                                "field": "name_patterns.folders",
-                                "expected_type": "dict"
-                            }
-                            error_collector.add_error("invalid_name_patterns_type", error_data)
-                    else:
-                        if 'include' in folders_patterns:
-                            if not isinstance(folders_patterns['include'], list):
-                                if error_collector:
-                                    error_data = {
-                                        "file": str(agents_file),
-                                        "field": "name_patterns.folders.include",
-                                        "expected_type": "list"
-                                    }
-                                    error_collector.add_error("invalid_name_patterns_type", error_data)
-                            else:
-                                for pattern in folders_patterns['include']:
-                                    if not isinstance(pattern, str):
-                                        if error_collector:
-                                            error_data = {
-                                                "file": str(agents_file),
-                                                "field": "name_patterns.folders.include",
-                                                "expected_type": "list_of_strings"
-                                            }
-                                            error_collector.add_error("invalid_name_patterns_type", error_data)
-                        if 'exclude' in folders_patterns:
-                            if not isinstance(folders_patterns['exclude'], list):
-                                if error_collector:
-                                    error_data = {
-                                        "file": str(agents_file),
-                                        "field": "name_patterns.folders.exclude",
-                                        "expected_type": "list"
-                                    }
-                                    error_collector.add_error("invalid_name_patterns_type", error_data)
-                            else:
-                                for pattern in folders_patterns['exclude']:
-                                    if not isinstance(pattern, str):
-                                        if error_collector:
-                                            error_data = {
-                                                "file": str(agents_file),
-                                                "field": "name_patterns.folders.exclude",
-                                                "expected_type": "list_of_strings"
-                                            }
-                                            error_collector.add_error("invalid_name_patterns_type", error_data)
-                        
-                        # Validate actual folders against patterns
-                        try:
-                            actual_folders = [f.name for f in path.iterdir() if f.is_dir()]
-                            if 'include' in folders_patterns and isinstance(folders_patterns['include'], list):
-                                include_patterns = folders_patterns['include']
-                                for foldername in actual_folders:
-                                    if not any(fnmatch.fnmatch(foldername, pattern) for pattern in include_patterns):
-                                        # Check if excluded
-                                        is_excluded = False
-                                        if 'exclude' in folders_patterns and isinstance(folders_patterns['exclude'], list):
-                                            is_excluded = any(fnmatch.fnmatch(foldername, pattern) for pattern in folders_patterns['exclude'])
-                                        if not is_excluded:
-                                            if error_collector:
-                                                error_data = {
-                                                    "file": str(agents_file),
-                                                    "field": "name_patterns.folders",
-                                                    "foldername": foldername
-                                                }
-                                                error_collector.add_error("folder_not_in_name_patterns", error_data)
-                        except PermissionError:
-                            pass
-        
-        return FolderMetadata(
-            path=path,
-            meta=meta,
-            when_conditions=parse_when_conditions(repo_layout),
-            files_field=repo_layout.get('files'),
-            entry_point=entry_point,
-            name_patterns=name_patterns,
-            show_files=show_files
-        )
-
-    # No repo-layout structure found
-    return FolderMetadata(path=path)
+                                        "field": "name_patterns.folders",
+                                        "foldername": foldername
+                                    })
+        except PermissionError:
+            pass
+    
+    return FolderMetadata(
+        path=path,
+        meta=meta,
+        when=when,
+        files=files,
+        entry_point=entry_point,
+        name_patterns=name_patterns,
+        show_files=show_files
+    )
 
 
 def load_root_metadata(cache: MetadataCache, error_collector: Optional[Any] = None) -> None:
@@ -652,8 +346,8 @@ def load_file_metadata(
     """
     # Get description from multiple sources
     desc_from_folder = None
-    if folder_metadata and folder_metadata.files_field:
-        desc_from_folder = folder_metadata.files_field.get(file_path.name)
+    if folder_metadata and folder_metadata.files:
+        desc_from_folder = folder_metadata.files.get(file_path.name)
     desc_from_md = get_file_description_from_md_file(file_path)
     desc_from_known = cache.known_files.get(file_path.name)
 
@@ -820,7 +514,7 @@ def build_file_tree_from_cache(
     load_folder_metadata_recursive(cache, cache.config.root_path, error_collector)
 
     root = cache.config.root_path
-    root_folder = FolderNode(name=root.name, children={}, metadata=None, has_agents_md=(cache.root_metadata is not None))
+    root_folder = FolderNode(name=root.name, children={}, meta=None, has_agents_md=(cache.root_metadata is not None))
 
     def build_tree_recursive(path: Path, folder_node: FolderNode) -> None:
         """
@@ -841,7 +535,7 @@ def build_file_tree_from_cache(
                 if item.name == 'AGENTS.md':
                     continue
                 frontmatter = parse_frontmatter(item)
-                repo_layout_meta = parse_repo_layout_frontmatter(frontmatter, item, error_collector)
+                repo_layout_meta = parse_hint_metadata(frontmatter, item, error_collector)
                 if repo_layout_meta:
                     repo_layout_mds.append(repo_layout_meta)
                     cache.repo_layout_metadata[item] = repo_layout_meta
@@ -866,7 +560,7 @@ def build_file_tree_from_cache(
                     folder_repo_layout_meta[key] = value
 
         if folder_repo_layout_meta:
-            folder_node.repo_layout_meta = folder_repo_layout_meta
+            folder_node.merged_meta_from_md = folder_repo_layout_meta
 
         try:
             for item in sorted(path.iterdir()):
@@ -938,7 +632,7 @@ def build_file_tree_from_cache(
                         folder_node.children[item.name] = FolderNode(
                             name=item.name,
                             children={},
-                            metadata=folder_metadata.meta,
+                            meta=folder_metadata.meta,
                             has_agents_md=(folder_metadata is not None)
                         )
                     else:
@@ -946,7 +640,7 @@ def build_file_tree_from_cache(
                         child_folder = FolderNode(
                             name=item.name,
                             children={},
-                            metadata=folder_metadata.meta if folder_metadata else None,
+                            meta=folder_metadata.meta if folder_metadata else None,
                             has_agents_md=(folder_metadata is not None)
                         )
                         folder_node.children[item.name] = child_folder
@@ -1000,6 +694,6 @@ def build_file_tree_from_cache(
             root_metadata = cache.root_metadata.meta
         else:
             # Add meta to root node
-            root_folder.metadata = cache.root_metadata.meta
+            root_folder.meta = cache.root_metadata.meta
 
-    return FileTree(root=root_folder, metadata=root_metadata)
+    return FileTree(root=root_folder, meta=root_metadata)

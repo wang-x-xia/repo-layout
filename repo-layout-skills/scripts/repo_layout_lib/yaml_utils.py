@@ -1,6 +1,7 @@
 import yaml
 from yaml.emitter import Emitter, ScalarAnalysis
-from typing import Any
+from typing import Any, Dict, Optional
+from pathlib import Path
 
 
 class EmptyValue:
@@ -103,3 +104,33 @@ def dump(data: Any, file=None, **kwargs) -> str:
     default_kwargs.update(kwargs)
 
     return yaml.dump(data, file, **default_kwargs)
+
+
+def parse_frontmatter(file_path: Path) -> Optional[Dict[str, Any]]:
+    """
+    Parse YAML frontmatter from a markdown file.
+
+    Args:
+        file_path: Path to the markdown file
+
+    Returns:
+        Parsed frontmatter as a dictionary, or None if no frontmatter found
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Check if file starts with ---
+        if not content.startswith('---'):
+            return None
+
+        # Find the end of frontmatter (second ---)
+        end_marker = content.find('\n---', 4)
+        if end_marker == -1:
+            return None
+
+        frontmatter_content = content[4:end_marker]
+        return yaml.safe_load(frontmatter_content)
+    except Exception:
+        # If parsing fails, return None
+        return None

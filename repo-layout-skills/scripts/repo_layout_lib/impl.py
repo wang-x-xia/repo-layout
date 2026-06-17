@@ -264,7 +264,7 @@ def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file
             if error_collector:
                 error_data = {
                     "file": str(md_file_path),
-                    "error": "No matching pattern specified"
+                    "pattern_type": "none"
                 }
                 error_collector.add_error("invalid_repo_layout_pattern", error_data)
             return None
@@ -280,7 +280,7 @@ def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file
             if error_collector:
                 error_data = {
                     "file": str(md_file_path),
-                    "error": "exclude without include is not allowed"
+                    "pattern_type": "exclude_without_include"
                 }
                 error_collector.add_error("invalid_repo_layout_pattern", error_data)
             return None
@@ -356,12 +356,13 @@ def parse_when_conditions(frontmatter: Optional[Dict[str, Any]]) -> List[WhenCon
     return conditions
 
 
-def load_folder_metadata(path: Path) -> Optional[FolderMetadata]:
+def load_folder_metadata(path: Path, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
     """
     Load folder metadata from AGENTS.md file in the given path.
     
     Args:
         path: Path to the folder
+        error_collector: Optional ErrorCollector for validation errors
         
     Returns:
         FolderMetadata object if AGENTS.md exists, None otherwise
@@ -379,13 +380,185 @@ def load_folder_metadata(path: Path) -> Optional[FolderMetadata]:
     if repo_layout and isinstance(repo_layout, dict):
         meta = repo_layout.get('meta', {})
         show_files = meta.get('show_files', True) if isinstance(meta, dict) else True
+        
+        # Validate entry_point
+        entry_point = repo_layout.get('entry_point')
+        if entry_point:
+            entry_point_path = path / entry_point
+            if not entry_point_path.exists():
+                if error_collector:
+                    error_data = {
+                        "file": str(agents_file),
+                        "entry_point": entry_point
+                    }
+                    error_collector.add_error("invalid_entry_point", error_data)
+        
+        # Validate name_patterns
+        name_patterns = repo_layout.get('name_patterns')
+        if name_patterns:
+            if not isinstance(name_patterns, dict):
+                if error_collector:
+                    error_data = {
+                        "file": str(agents_file),
+                        "field": "name_patterns",
+                        "expected_type": "dict"
+                    }
+                    error_collector.add_error("invalid_name_patterns_type", error_data)
+            else:
+                # Validate files patterns
+                if 'files' in name_patterns:
+                    files_patterns = name_patterns['files']
+                    if not isinstance(files_patterns, dict):
+                        if error_collector:
+                            error_data = {
+                                "file": str(agents_file),
+                                "field": "name_patterns.files",
+                                "expected_type": "dict"
+                            }
+                            error_collector.add_error("invalid_name_patterns_type", error_data)
+                    else:
+                        if 'include' in files_patterns:
+                            if not isinstance(files_patterns['include'], list):
+                                if error_collector:
+                                    error_data = {
+                                        "file": str(agents_file),
+                                        "field": "name_patterns.files.include",
+                                        "expected_type": "list"
+                                    }
+                                    error_collector.add_error("invalid_name_patterns_type", error_data)
+                            else:
+                                # Validate pattern strings and check against actual files
+                                for pattern in files_patterns['include']:
+                                    if not isinstance(pattern, str):
+                                        if error_collector:
+                                            error_data = {
+                                                "file": str(agents_file),
+                                                "field": "name_patterns.files.include",
+                                                "expected_type": "list_of_strings"
+                                            }
+                                            error_collector.add_error("invalid_name_patterns_type", error_data)
+                        if 'exclude' in files_patterns:
+                            if not isinstance(files_patterns['exclude'], list):
+                                if error_collector:
+                                    error_data = {
+                                        "file": str(agents_file),
+                                        "field": "name_patterns.files.exclude",
+                                        "expected_type": "list"
+                                    }
+                                    error_collector.add_error("invalid_name_patterns_type", error_data)
+                            else:
+                                for pattern in files_patterns['exclude']:
+                                    if not isinstance(pattern, str):
+                                        if error_collector:
+                                            error_data = {
+                                                "file": str(agents_file),
+                                                "field": "name_patterns.files.exclude",
+                                                "expected_type": "list_of_strings"
+                                            }
+                                            error_collector.add_error("invalid_name_patterns_type", error_data)
+                        
+                        # Validate actual files against patterns
+                        try:
+                            actual_files = [f.name for f in path.iterdir() if f.is_file()]
+                            if 'include' in files_patterns and isinstance(files_patterns['include'], list):
+                                include_patterns = files_patterns['include']
+                                for filename in actual_files:
+                                    if not any(fnmatch.fnmatch(filename, pattern) for pattern in include_patterns):
+                                        # Check if excluded
+                                        is_excluded = False
+                                        if 'exclude' in files_patterns and isinstance(files_patterns['exclude'], list):
+                                            is_excluded = any(fnmatch.fnmatch(filename, pattern) for pattern in files_patterns['exclude'])
+                                        if not is_excluded:
+                                            if error_collector:
+                                                error_data = {
+                                                    "file": str(agents_file),
+                                                    "field": "name_patterns.files",
+                                                    "filename": filename
+                                                }
+                                                error_collector.add_error("file_not_in_name_patterns", error_data)
+                        except PermissionError:
+                            pass
+                
+                # Validate folders patterns
+                if 'folders' in name_patterns:
+                    folders_patterns = name_patterns['folders']
+                    if not isinstance(folders_patterns, dict):
+                        if error_collector:
+                            error_data = {
+                                "file": str(agents_file),
+                                "field": "name_patterns.folders",
+                                "expected_type": "dict"
+                            }
+                            error_collector.add_error("invalid_name_patterns_type", error_data)
+                    else:
+                        if 'include' in folders_patterns:
+                            if not isinstance(folders_patterns['include'], list):
+                                if error_collector:
+                                    error_data = {
+                                        "file": str(agents_file),
+                                        "field": "name_patterns.folders.include",
+                                        "expected_type": "list"
+                                    }
+                                    error_collector.add_error("invalid_name_patterns_type", error_data)
+                            else:
+                                for pattern in folders_patterns['include']:
+                                    if not isinstance(pattern, str):
+                                        if error_collector:
+                                            error_data = {
+                                                "file": str(agents_file),
+                                                "field": "name_patterns.folders.include",
+                                                "expected_type": "list_of_strings"
+                                            }
+                                            error_collector.add_error("invalid_name_patterns_type", error_data)
+                        if 'exclude' in folders_patterns:
+                            if not isinstance(folders_patterns['exclude'], list):
+                                if error_collector:
+                                    error_data = {
+                                        "file": str(agents_file),
+                                        "field": "name_patterns.folders.exclude",
+                                        "expected_type": "list"
+                                    }
+                                    error_collector.add_error("invalid_name_patterns_type", error_data)
+                            else:
+                                for pattern in folders_patterns['exclude']:
+                                    if not isinstance(pattern, str):
+                                        if error_collector:
+                                            error_data = {
+                                                "file": str(agents_file),
+                                                "field": "name_patterns.folders.exclude",
+                                                "expected_type": "list_of_strings"
+                                            }
+                                            error_collector.add_error("invalid_name_patterns_type", error_data)
+                        
+                        # Validate actual folders against patterns
+                        try:
+                            actual_folders = [f.name for f in path.iterdir() if f.is_dir()]
+                            if 'include' in folders_patterns and isinstance(folders_patterns['include'], list):
+                                include_patterns = folders_patterns['include']
+                                for foldername in actual_folders:
+                                    if not any(fnmatch.fnmatch(foldername, pattern) for pattern in include_patterns):
+                                        # Check if excluded
+                                        is_excluded = False
+                                        if 'exclude' in folders_patterns and isinstance(folders_patterns['exclude'], list):
+                                            is_excluded = any(fnmatch.fnmatch(foldername, pattern) for pattern in folders_patterns['exclude'])
+                                        if not is_excluded:
+                                            if error_collector:
+                                                error_data = {
+                                                    "file": str(agents_file),
+                                                    "field": "name_patterns.folders",
+                                                    "foldername": foldername
+                                                }
+                                                error_collector.add_error("folder_not_in_name_patterns", error_data)
+                        except PermissionError:
+                            pass
+        
         return FolderMetadata(
             path=path,
             meta=meta,
             when_conditions=parse_when_conditions(repo_layout),
             files_field=repo_layout.get('files'),
-            entry_point=repo_layout.get('entry_point'),
-            name_patterns=repo_layout.get('name_patterns'),
+            entry_point=entry_point,
+            name_patterns=name_patterns,
             show_files=show_files
         )
 
@@ -393,21 +566,22 @@ def load_folder_metadata(path: Path) -> Optional[FolderMetadata]:
     return FolderMetadata(path=path)
 
 
-def load_root_metadata(cache: MetadataCache) -> None:
+def load_root_metadata(cache: MetadataCache, error_collector: Optional[Any] = None) -> None:
     """
     Load root folder metadata and cache it.
     
     Args:
         cache: MetadataCache to populate with root metadata
+        error_collector: Optional ErrorCollector for validation errors
     """
-    root_metadata = load_folder_metadata(cache.config.root_path)
+    root_metadata = load_folder_metadata(cache.config.root_path, error_collector)
     cache.root_metadata = root_metadata
     
     if root_metadata:
         cache.set_folder_metadata(cache.config.root_path, root_metadata)
 
 
-def load_folder_metadata_recursive(cache: MetadataCache, path: Path) -> None:
+def load_folder_metadata_recursive(cache: MetadataCache, path: Path, error_collector: Optional[Any] = None) -> None:
     """
     Recursively load folder metadata for a path and its subdirectories.
     
@@ -418,17 +592,18 @@ def load_folder_metadata_recursive(cache: MetadataCache, path: Path) -> None:
     Args:
         cache: MetadataCache to populate with folder metadata
         path: Path to the folder to scan
+        error_collector: Optional ErrorCollector for validation errors
     """
     try:
         for item in sorted(path.iterdir()):
             if item.is_dir():
                 # Load metadata for this subdirectory
-                metadata = load_folder_metadata(item)
+                metadata = load_folder_metadata(item, error_collector)
                 if metadata:
                     cache.set_folder_metadata(item, metadata)
                 
                 # Recursively load metadata for subdirectories
-                load_folder_metadata_recursive(cache, item)
+                load_folder_metadata_recursive(cache, item, error_collector)
     except PermissionError:
         # Skip directories we don't have permission to access
         pass
@@ -495,12 +670,11 @@ def load_file_metadata(
     # Check for conflicts: if both custom sources have descriptions, use default value and error
     if desc_from_folder is not None and desc_from_md is not None:
         if error_collector:
+            agents_md_path = file_path.parent / 'AGENTS.md'
             error_data = {
                 "file": str(file_path.relative_to(cache.config.root_path)),
-                "conflict_definitions": [
-                    "AGENTS.md",
-                    str(file_path.relative_to(cache.config.root_path)) + ".md"
-                ]
+                "conflict_with_folder_meta": True,
+                "conflict_with_md_file": str(file_path.relative_to(cache.config.root_path)) + ".md"
             }
             error_collector.add_error("conflict_file_description", error_data)
         # Use default value (known_files) when conflict occurs
@@ -642,8 +816,8 @@ def build_file_tree_from_cache(
         FileTree object representing the file tree
     """
     # Load all metadata
-    load_root_metadata(cache)
-    load_folder_metadata_recursive(cache, cache.config.root_path)
+    load_root_metadata(cache, error_collector)
+    load_folder_metadata_recursive(cache, cache.config.root_path, error_collector)
 
     root = cache.config.root_path
     root_folder = FolderNode(name=root.name, children={}, metadata=None, has_agents_md=(cache.root_metadata is not None))

@@ -11,6 +11,19 @@ conflict_repo_layout_coverage/:
   test.txt:
 conflict_repo_layout_meta/:
   :layout-conflict_meta: Test
+file_not_in_name_patterns(+AI)/:
+  :meta:
+    description: Test case - invalid name_patterns
+folder_not_in_name_patterns(+AI)/:
+  :meta:
+    description: Test case - folder not in name_patterns
+  actual_folder/:
+invalid_entry_point(+AI)/:
+  :meta:
+    description: Test case - invalid entry_point
+invalid_name_patterns_type(+AI)/:
+  :meta:
+    description: Test case - invalid name_patterns type
 invalid_repo_layout_field/:
   invalid_field.md:
   test.txt:

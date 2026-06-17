@@ -1,9 +1,27 @@
 errors:
+- code: file_not_in_name_patterns
+  data:
+    field: name_patterns.files
+    file: file_not_in_name_patterns\AGENTS.md
+    filename: AGENTS.md
+- code: folder_not_in_name_patterns
+  data:
+    field: name_patterns.folders
+    file: folder_not_in_name_patterns\AGENTS.md
+    foldername: actual_folder
+- code: invalid_entry_point
+  data:
+    entry_point: nonexistent.py
+    file: invalid_entry_point\AGENTS.md
+- code: invalid_name_patterns_type
+  data:
+    expected_type: dict
+    field: name_patterns
+    file: invalid_name_patterns_type\AGENTS.md
 - code: conflict_file_description
   data:
-    conflict_definitions:
-    - conflict_file_description\AGENTS.md
-    - conflict_file_description\file1.txt.md
+    conflict_with_folder_meta: true
+    conflict_with_md_file: conflict_file_description\file1.txt.md
     file: conflict_file_description\file1.txt
 - code: conflict_repo_layout_coverage
   data:
@@ -31,9 +49,9 @@ errors:
     invalid_field: invalid_field
 - code: invalid_repo_layout_pattern
   data:
-    error: No matching pattern specified
     file: invalid_repo_layout_pattern\exclude_only.md
+    pattern_type: none
 - code: invalid_repo_layout_pattern
   data:
-    error: No matching pattern specified
     file: invalid_repo_layout_pattern\no_pattern.md
+    pattern_type: none

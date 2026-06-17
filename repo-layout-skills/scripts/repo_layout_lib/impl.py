@@ -74,10 +74,13 @@ class RepoLayoutMetadata:
 class FolderMetadata:
     """Metadata for a folder parsed from AGENTS.md frontmatter."""
     path: Path
-    folder_meta: Optional[Dict[str, Any]] = None
+    meta: Optional[Dict[str, Any]] = None  # Renamed from folder_meta
     when_conditions: List[WhenCondition] = field(default_factory=list)
     files_field: Optional[Dict[str, str]] = None
     visibility_state: VisibilityState = VisibilityState.VISIBLE
+    entry_point: Optional[str] = None  # New field
+    name_patterns: Optional[Dict[str, Any]] = None  # New field
+    show_files: bool = True  # Default is true
     
     def should_hide_files(self, tags: Optional[List[str]]) -> bool:
         """
@@ -89,6 +92,11 @@ class FolderMetadata:
         Returns:
             True if files should be hidden, False otherwise
         """
+        # First check meta.show_files
+        if not self.show_files:
+            return True
+
+        # Then check when conditions
         if not tags or not self.when_conditions:
             return False
 
@@ -229,7 +237,7 @@ def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file
         return None
 
     # Validate that only allowed fields are present
-    allowed_fields = {'files', 'include', 'exclude', 'show_files', 'meta'}
+    allowed_fields = {'files', 'include', 'exclude', 'show_files', 'meta', 'when'}
     for field in repo_layout_data.keys():
         if field not in allowed_fields:
             if error_collector:
@@ -241,36 +249,41 @@ def parse_repo_layout_frontmatter(frontmatter: Optional[Dict[str, Any]], md_file
                 error_collector.add_error("invalid_repo_layout_field", error_data)
             return None
 
-    # Validate that at least one pattern is present
+    # Validate that at least one pattern is present (only if this is a repo-layout md file, not AGENTS.md)
     has_files = bool(repo_layout_data.get('files'))
     has_include = bool(repo_layout_data.get('include'))
     has_exclude = bool(repo_layout_data.get('exclude'))
 
-    # Valid patterns: files, include-only, or include+exclude
-    if not has_files and not has_include:
-        if error_collector:
-            error_data = {
-                "file": str(md_file_path),
-                "error": "No matching pattern specified"
-            }
-            error_collector.add_error("invalid_repo_layout_pattern", error_data)
-        return None
+    # If no patterns are specified, this is valid for AGENTS.md (folder metadata only)
+    # Skip pattern validation if this is AGENTS.md
+    if md_file_path.name == 'AGENTS.md':
+        pass
+    else:
+        # Valid patterns: files, include-only, or include+exclude
+        if not has_files and not has_include:
+            if error_collector:
+                error_data = {
+                    "file": str(md_file_path),
+                    "error": "No matching pattern specified"
+                }
+                error_collector.add_error("invalid_repo_layout_pattern", error_data)
+            return None
 
-    if has_include and not has_exclude:
-        # include-only pattern is valid
-        pass
-    elif has_include and has_exclude:
-        # include+exclude pattern is valid
-        pass
-    elif has_exclude and not has_include:
-        # exclude without include is invalid
-        if error_collector:
-            error_data = {
-                "file": str(md_file_path),
-                "error": "exclude without include is not allowed"
-            }
-            error_collector.add_error("invalid_repo_layout_pattern", error_data)
-        return None
+        if has_include and not has_exclude:
+            # include-only pattern is valid
+            pass
+        elif has_include and has_exclude:
+            # include+exclude pattern is valid
+            pass
+        elif has_exclude and not has_include:
+            # exclude without include is invalid
+            if error_collector:
+                error_data = {
+                    "file": str(md_file_path),
+                    "error": "exclude without include is not allowed"
+                }
+                error_collector.add_error("invalid_repo_layout_pattern", error_data)
+            return None
 
     return RepoLayoutMetadata(
         path=md_file_path,
@@ -361,12 +374,23 @@ def load_folder_metadata(path: Path) -> Optional[FolderMetadata]:
     if not frontmatter:
         return FolderMetadata(path=path)
     
-    return FolderMetadata(
-        path=path,
-        folder_meta=frontmatter.get('folder_meta'),
-        when_conditions=parse_when_conditions(frontmatter),
-        files_field=frontmatter.get('files')
-    )
+    # Parse repo-layout structure
+    repo_layout = frontmatter.get('repo-layout')
+    if repo_layout and isinstance(repo_layout, dict):
+        meta = repo_layout.get('meta', {})
+        show_files = meta.get('show_files', True) if isinstance(meta, dict) else True
+        return FolderMetadata(
+            path=path,
+            meta=meta,
+            when_conditions=parse_when_conditions(repo_layout),
+            files_field=repo_layout.get('files'),
+            entry_point=repo_layout.get('entry_point'),
+            name_patterns=repo_layout.get('name_patterns'),
+            show_files=show_files
+        )
+
+    # No repo-layout structure found
+    return FolderMetadata(path=path)
 
 
 def load_root_metadata(cache: MetadataCache) -> None:
@@ -410,31 +434,6 @@ def load_folder_metadata_recursive(cache: MetadataCache, path: Path) -> None:
         pass
 
 
-def get_file_description_from_agents(agents_file: Path, filename: str) -> Optional[str]:
-    """
-    Get file description from AGENTS.md frontmatter files field.
-
-    Args:
-        agents_file: Path to the AGENTS.md file
-        filename: Name of the file to get description for
-
-    Returns:
-        Description string if found, None otherwise
-    """
-    if not agents_file.exists():
-        return None
-
-    frontmatter = parse_frontmatter(agents_file)
-    if not frontmatter or 'files' not in frontmatter:
-        return None
-
-    files_dict = frontmatter['files']
-    if isinstance(files_dict, dict) and filename in files_dict:
-        return files_dict[filename]
-
-    return None
-
-
 def get_file_description_from_md_file(file_path: Path) -> Optional[str]:
     """
     Get file description from {file_name}.{ext}.md frontmatter description field.
@@ -459,45 +458,47 @@ def get_file_description_from_md_file(file_path: Path) -> Optional[str]:
 
 
 def load_file_metadata(
-    cache: MetadataCache, 
-    file_path: Path, 
-    parent_agents_file: Path,
+    cache: MetadataCache,
+    file_path: Path,
+    folder_metadata: Optional[FolderMetadata] = None,
     error_collector: Optional[Any] = None
 ) -> FileMetadata:
     """
     Load file metadata from multiple sources with conflict detection.
-    
+
     Args:
         cache: MetadataCache containing known_files and other data
         file_path: Path to the file
-        parent_agents_file: Path to parent directory's AGENTS.md
+        folder_metadata: FolderMetadata for the parent directory
         error_collector: Optional ErrorCollector for conflict warnings
-        
+
     Returns:
         FileMetadata object with description from best source
     """
     # Get description from multiple sources
-    desc_from_agents = get_file_description_from_agents(parent_agents_file, file_path.name)
+    desc_from_folder = None
+    if folder_metadata and folder_metadata.files_field:
+        desc_from_folder = folder_metadata.files_field.get(file_path.name)
     desc_from_md = get_file_description_from_md_file(file_path)
     desc_from_known = cache.known_files.get(file_path.name)
-    
+
     # Extract description from known_files if it's a dict
     if isinstance(desc_from_known, dict):
         desc_from_known = desc_from_known.get('description')
     elif not isinstance(desc_from_known, str):
         desc_from_known = None
-    
+
     # Determine source and handle conflicts
     description = None
     source = None
-    
+
     # Check for conflicts: if both custom sources have descriptions, use default value and error
-    if desc_from_agents is not None and desc_from_md is not None:
+    if desc_from_folder is not None and desc_from_md is not None:
         if error_collector:
             error_data = {
                 "file": str(file_path.relative_to(cache.config.root_path)),
                 "conflict_definitions": [
-                    str(parent_agents_file.relative_to(cache.config.root_path)),
+                    "AGENTS.md",
                     str(file_path.relative_to(cache.config.root_path)) + ".md"
                 ]
             }
@@ -506,8 +507,8 @@ def load_file_metadata(
         description = desc_from_known
         source = "known_files"
     # Use custom description if available, otherwise fall back to known_files
-    elif desc_from_agents is not None:
-        description = desc_from_agents
+    elif desc_from_folder is not None:
+        description = desc_from_folder
         source = "agents"
     elif desc_from_md is not None:
         description = desc_from_md
@@ -515,7 +516,7 @@ def load_file_metadata(
     else:
         description = desc_from_known
         source = "known_files" if desc_from_known else None
-    
+
     return FileMetadata(
         path=file_path,
         description=description,
@@ -655,12 +656,16 @@ def build_file_tree_from_cache(
             path: Current directory path
             folder_node: Current folder node to populate
         """
-        parent_agents_file = path / 'AGENTS.md'
+        # Get folder metadata for this directory
+        folder_metadata = cache.get_folder_metadata(path)
 
-        # First, scan for repo-layout md files in this folder
+        # First, scan for repo-layout md files in this folder (exclude AGENTS.md)
         repo_layout_mds = []
         for item in sorted(path.iterdir()):
             if item.is_file() and item.name.endswith('.md'):
+                # Skip AGENTS.md - it's handled by load_folder_metadata for folder-level config
+                if item.name == 'AGENTS.md':
+                    continue
                 frontmatter = parse_frontmatter(item)
                 repo_layout_meta = parse_repo_layout_frontmatter(frontmatter, item, error_collector)
                 if repo_layout_meta:
@@ -724,7 +729,7 @@ def build_file_tree_from_cache(
 
                     # Load file metadata
                     file_metadata = load_file_metadata(
-                        cache, item, parent_agents_file, error_collector
+                        cache, item, folder_metadata, error_collector
                     )
                     cache.set_file_metadata(item, file_metadata)
 
@@ -754,12 +759,12 @@ def build_file_tree_from_cache(
                     if folder_metadata:
                         should_hide_files = folder_metadata.should_hide_files(cache.config.tags)
 
-                    if should_hide_files and folder_metadata and folder_metadata.folder_meta:
-                        # When condition matches, use folder_meta as metadata
+                    if should_hide_files and folder_metadata and folder_metadata.meta:
+                        # When condition matches, use meta as metadata
                         folder_node.children[item.name] = FolderNode(
                             name=item.name,
                             children={},
-                            metadata=folder_metadata.folder_meta,
+                            metadata=folder_metadata.meta,
                             has_agents_md=(folder_metadata is not None)
                         )
                     else:
@@ -767,7 +772,7 @@ def build_file_tree_from_cache(
                         child_folder = FolderNode(
                             name=item.name,
                             children={},
-                            metadata=folder_metadata.folder_meta if folder_metadata else None,
+                            metadata=folder_metadata.meta if folder_metadata else None,
                             has_agents_md=(folder_metadata is not None)
                         )
                         folder_node.children[item.name] = child_folder
@@ -813,14 +818,14 @@ def build_file_tree_from_cache(
 
     # Handle root folder metadata
     root_metadata = None
-    if cache.root_metadata and cache.root_metadata.folder_meta:
+    if cache.root_metadata and cache.root_metadata.meta:
         should_hide_files = cache.root_metadata.should_hide_files(cache.config.tags)
 
         if should_hide_files:
             # When condition matches, set root metadata
-            root_metadata = cache.root_metadata.folder_meta
+            root_metadata = cache.root_metadata.meta
         else:
-            # Add folder_meta to root node
-            root_folder.metadata = cache.root_metadata.folder_meta
+            # Add meta to root node
+            root_folder.metadata = cache.root_metadata.meta
 
     return FileTree(root=root_folder, metadata=root_metadata)

@@ -1,13 +1,14 @@
 ---
-folder_meta:
-  "{case}/": 
-    :meta: Each folder is a set of test cases, "core-success" for success cases, "core-error" for error cases
-    data: Data files, created manually
-    result: Generated test results, only need to be updated manually if big changes occur
-    case.yaml: Test case configuration
-when:
-- tag: [standard]
-  show_files: false
+repo-layout:
+  meta:
+    "{case}/": 
+      :meta: Each folder is a set of test cases, "core-success" for success cases, "core-error" for error cases
+      data: Data files, created manually
+      result: Generated test results, only need to be updated manually if big changes occur
+      case.yaml: Test case configuration
+  when:
+    - tag: [standard]
+      show_files: false
 ---
 
 ## 测试脚本

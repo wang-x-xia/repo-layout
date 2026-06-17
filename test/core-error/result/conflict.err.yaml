@@ -26,6 +26,7 @@ errors:
     - include
     - meta
     - show_files
+    - when
     file: invalid_repo_layout_field\invalid_field.md
     invalid_field: invalid_field
 - code: invalid_repo_layout_pattern

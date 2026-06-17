@@ -1,5 +1,6 @@
 ---
-folder_meta:
+repo-layout:
+  meta:
     description: Repo Root
 ---
 

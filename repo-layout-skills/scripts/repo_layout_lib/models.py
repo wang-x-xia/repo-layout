@@ -14,13 +14,6 @@ class ConfigModel(BaseModel):
     """Base model for parsing configuration/data from external sources."""
     model_config = ConfigDict(extra='forbid')
 
-
-class VisibilityState(str, Enum):
-    """Visibility state for folders based on when conditions."""
-    VISIBLE = "visible"
-    HIDDEN = "hidden"
-
-
 class FileNode(BaseModel):
     """Represents a file in the tree."""
     name: str
@@ -54,8 +47,6 @@ class FileTree(BaseModel):
     meta: Optional[Any] = None
 
 
-
-
 class PatternSpec(ConfigModel):
     """Pattern specification for files or folders."""
     include: List[str] = Field(default_factory=list)
@@ -75,7 +66,7 @@ class HintMetadata(ConfigModel):
     include: List[str] = Field(default_factory=list)  # Glob patterns for whitelist
     exclude: List[str] = Field(default_factory=list)  # Glob patterns for blacklist
     show_files: bool = True  # Whether to show metadata for covered files
-    meta: Dict[str, Any] = Field(default_factory=dict)  # Custom metadata to output
+    meta: Optional[Dict[str, Any]] = None  # Custom metadata to output
     
     @model_validator(mode='after')
     def validate_patterns(self):
@@ -112,9 +103,8 @@ class HintMetadata(ConfigModel):
 class FolderMetadata(ConfigModel):
     """Metadata for a folder parsed from AGENTS.md frontmatter."""
     path: Path
-    meta: Optional[Dict[str, Any]] = None
+    meta: Optional[Any] = None
     files: Optional[Dict[str, str]] = None
-    visibility_state: VisibilityState = VisibilityState.VISIBLE
     entry_point: Optional[str] = None
     name_patterns: Optional[NamePatterns] = None
     show_files: bool = True

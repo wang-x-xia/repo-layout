@@ -15,7 +15,6 @@ from .models import (
     FolderNode,
     TreeNode,
     FileTree,
-    VisibilityState,
     HintMetadata,
     FolderMetadata,
     FileMetadata,

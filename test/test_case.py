@@ -176,6 +176,7 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
         "action": action,
         "case_path": str(case_path),
         "total_cases": len(cases),
+        "passed_cases": len(cases) - len(failed_cases),
         "failed_cases": failed_cases
     }
 
@@ -205,20 +206,28 @@ def run_all_tests(test_dir: Path):
         sys.exit(1)
 
     all_passed = True
+    total_cases = 0
+    total_passed_cases = 0
+    total_failed_cases = 0
     results = []
 
     for case_dir in sorted(case_dirs):
         case_name = case_dir.name
         result = verify_result(case_dir, generate=False)
-        case_passed = len(result["failed_cases"]) == 0
 
-        if not case_passed:
+        if result["failed_cases"]:
             all_passed = False
+        
+        total_cases += result["total_cases"]
+        total_passed_cases += result["passed_cases"]
+        total_failed_cases += len(result["failed_cases"])
+
 
         results.append({
             "name": case_name,
-            "status": "passed" if case_passed else "failed",
-            "details": result
+            "cases": result["total_cases"],
+            "passed_cases": result["passed_cases"],
+            "failed_cases": result["failed_cases"] 
         })
 
     output = {
@@ -226,6 +235,9 @@ def run_all_tests(test_dir: Path):
         "test_dir": str(test_dir),
         "total_test_dirs": len(case_dirs),
         "all_passed": all_passed,
+        "total_cases": total_cases,
+        "total_passed_cases": total_passed_cases,
+        "total_failed_cases": total_failed_cases,
         "results": results
     }
 

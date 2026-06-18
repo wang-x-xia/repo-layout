@@ -202,7 +202,7 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
         # In hint mode, add (+AI) suffix if folder has AGENTS.md
         if show_folder_agents_md == 'hint' and folder.has_agents_md:
             folder_key = f"{name}(+AI)/"
-        return {folder_key: children_dict}
+        return {folder_key: children_dict if children_dict else YAML_BLANK}
 
 # Error codes
 ERROR_FILE_NOT_FOUND = "file_not_found"

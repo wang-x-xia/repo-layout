@@ -22,8 +22,6 @@ invalid_entry_point(+AI)/:
   :meta:
     description: Test case - invalid entry_point
 invalid_name_patterns_type(+AI)/:
-  :meta:
-    description: Test case - invalid name_patterns type
 invalid_repo_layout_field/:
   invalid_field.md:
   test.txt:

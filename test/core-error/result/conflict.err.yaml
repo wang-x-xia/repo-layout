@@ -39,11 +39,11 @@ errors:
 - code: invalid_repo_layout_field
   data:
     allowed_fields:
-    - exclude
     - files
     - include
-    - meta
+    - exclude
     - show_files
+    - meta
     - when
     file: invalid_repo_layout_field\invalid_field.md
     invalid_field: invalid_field

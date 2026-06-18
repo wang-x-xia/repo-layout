@@ -15,6 +15,7 @@ nested/nested/:
   nested/nested/single_file.txt:
   nested_b/nested/:
 tags(+AI)/:
-  description: Test directory for custom tags
+  :meta:
+    description: Test directory for custom tags
 test.log:
 

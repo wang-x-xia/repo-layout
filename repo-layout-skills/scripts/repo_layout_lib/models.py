@@ -56,12 +56,6 @@ class FileTree(BaseModel):
 
 
 
-class WhenCondition(ConfigModel):
-    """Represents a when condition from frontmatter."""
-    tag: Union[str, List[str]]
-    show_files: bool
-
-
 class PatternSpec(ConfigModel):
     """Pattern specification for files or folders."""
     include: List[str] = Field(default_factory=list)
@@ -82,7 +76,6 @@ class HintMetadata(ConfigModel):
     exclude: List[str] = Field(default_factory=list)  # Glob patterns for blacklist
     show_files: bool = True  # Whether to show metadata for covered files
     meta: Dict[str, Any] = Field(default_factory=dict)  # Custom metadata to output
-    when: Optional[List[WhenCondition]] = None  # When conditions
     
     @model_validator(mode='after')
     def validate_patterns(self):
@@ -120,41 +113,11 @@ class FolderMetadata(ConfigModel):
     """Metadata for a folder parsed from AGENTS.md frontmatter."""
     path: Path
     meta: Optional[Dict[str, Any]] = None
-    when: Optional[List[WhenCondition]] = None
     files: Optional[Dict[str, str]] = None
     visibility_state: VisibilityState = VisibilityState.VISIBLE
     entry_point: Optional[str] = None
     name_patterns: Optional[NamePatterns] = None
     show_files: bool = True
-    
-    def should_hide_files(self, tags: Optional[List[str]]) -> bool:
-        """
-        Check if files should be hidden based on when conditions and tags.
-
-        Args:
-            tags: List of tags to check against
-
-        Returns:
-            True if files should be hidden, False otherwise
-        """
-        # First check meta.show_files
-        if not self.show_files:
-            return True
-
-        # Then check when conditions
-        if not tags or not self.when:
-            return False
-
-        for condition in self.when:
-            # Handle both string and list tags
-            condition_tags = condition.tag if isinstance(condition.tag, list) else [condition.tag]
-            # Check if any of the condition tags is in the provided tags
-            if any(tag in tags for tag in condition_tags) and not condition.show_files:
-                return True
-        return False
-
-
-
 
 class FileMetadata(ConfigModel):
     """Metadata for a file from multiple sources."""

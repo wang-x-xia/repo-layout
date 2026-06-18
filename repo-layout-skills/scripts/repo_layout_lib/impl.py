@@ -16,7 +16,6 @@ from .models import (
     TreeNode,
     FileTree,
     VisibilityState,
-    WhenCondition,
     HintMetadata,
     FolderMetadata,
     FileMetadata,
@@ -25,9 +24,10 @@ from .models import (
     NamePatterns
 )
 from .error import RepoLayoutValidationError
+from .when import apply_when_conditions
 
 
-def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
+def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, tags: Optional[List[str]] = None, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
     """
     Parse repo-layout frontmatter from AGENTS.md file.
 
@@ -36,6 +36,7 @@ def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: P
     Args:
         frontmatter: Parsed frontmatter dictionary
         md_file_path: Path to the AGENTS.md file
+        tags: Optional list of tags for when conditions
         error_collector: Optional ErrorCollector for validation errors
 
     Returns:
@@ -47,6 +48,9 @@ def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: P
     repo_layout_data = frontmatter['repo-layout']
     if not isinstance(repo_layout_data, dict):
         return None
+
+    # Apply when conditions at parse phase
+    repo_layout_data = apply_when_conditions(repo_layout_data, tags, md_file_path)
 
     # Add path to data for validation
     repo_layout_data['path'] = md_file_path
@@ -63,7 +67,7 @@ def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: P
         return None
 
 
-def parse_hint_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, error_collector: Optional[Any] = None) -> Optional[HintMetadata]:
+def parse_hint_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, tags: Optional[List[str]] = None, error_collector: Optional[Any] = None) -> Optional[HintMetadata]:
     """
     Parse repo-layout frontmatter from a non-AGENTS.md markdown file.
 
@@ -72,6 +76,7 @@ def parse_hint_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Pat
     Args:
         frontmatter: Parsed frontmatter dictionary
         md_file_path: Path to the markdown file
+        tags: Optional list of tags for when conditions
         error_collector: Optional ErrorCollector for validation errors
 
     Returns:
@@ -83,6 +88,9 @@ def parse_hint_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Pat
     repo_layout_data = frontmatter['repo-layout']
     if not isinstance(repo_layout_data, dict):
         return None
+
+    # Apply when conditions at parse phase
+    repo_layout_data = apply_when_conditions(repo_layout_data, tags, md_file_path)
 
     # Add path to data for validation
     repo_layout_data['path'] = md_file_path
@@ -131,42 +139,13 @@ def match_file_patterns(filename: str, repo_layout: HintMetadata) -> bool:
     return False
 
 
-def parse_when_conditions(frontmatter: Optional[Dict[str, Any]]) -> List[WhenCondition]:
-    """
-    Parse when conditions from frontmatter.
-    
-    Args:
-        frontmatter: Parsed frontmatter dictionary
-        
-    Returns:
-        List of WhenCondition objects
-    """
-    if not frontmatter or 'when' not in frontmatter:
-        return []
-    
-    when_conditions = frontmatter['when']
-    if not isinstance(when_conditions, list):
-        return []
-    
-    conditions = []
-    for condition in when_conditions:
-        if not isinstance(condition, dict):
-            continue
-        try:
-            conditions.append(WhenCondition.model_validate(condition))
-        except (ValueError, TypeError):
-            # Skip invalid conditions silently
-            continue
-    
-    return conditions
-
-
-def load_folder_metadata(path: Path, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
+def load_folder_metadata(path: Path, tags: Optional[List[str]] = None, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
     """
     Load folder metadata from AGENTS.md file in the given path.
     
     Args:
         path: Path to the folder
+        tags: Optional list of tags for when conditions
         error_collector: Optional ErrorCollector for validation errors
         
     Returns:
@@ -181,11 +160,10 @@ def load_folder_metadata(path: Path, error_collector: Optional[Any] = None) -> O
         return FolderMetadata(path=path)
     
     # Parse repo-layout structure using the new parser
-    agents_repo_layout = parse_folder_metadata(frontmatter, agents_file, error_collector)
+    agents_repo_layout = parse_folder_metadata(frontmatter, agents_file, tags, error_collector)
     
     # Even if parsing fails, try to extract basic metadata from frontmatter
     meta = None
-    when = None
     files = None
     entry_point = None
     name_patterns = None
@@ -193,7 +171,6 @@ def load_folder_metadata(path: Path, error_collector: Optional[Any] = None) -> O
     
     if agents_repo_layout:
         meta = agents_repo_layout.meta
-        when = agents_repo_layout.when
         files = agents_repo_layout.files
         entry_point = agents_repo_layout.entry_point
         name_patterns = agents_repo_layout.name_patterns
@@ -248,11 +225,10 @@ def load_folder_metadata(path: Path, error_collector: Optional[Any] = None) -> O
                                     })
         except PermissionError:
             pass
-    
+
     return FolderMetadata(
         path=path,
         meta=meta,
-        when=when,
         files=files,
         entry_point=entry_point,
         name_patterns=name_patterns,
@@ -268,7 +244,7 @@ def load_root_metadata(cache: MetadataCache, error_collector: Optional[Any] = No
         cache: MetadataCache to populate with root metadata
         error_collector: Optional ErrorCollector for validation errors
     """
-    root_metadata = load_folder_metadata(cache.config.root_path, error_collector)
+    root_metadata = load_folder_metadata(cache.config.root_path, cache.config.tags, error_collector)
     cache.root_metadata = root_metadata
     
     if root_metadata:
@@ -278,11 +254,11 @@ def load_root_metadata(cache: MetadataCache, error_collector: Optional[Any] = No
 def load_folder_metadata_recursive(cache: MetadataCache, path: Path, error_collector: Optional[Any] = None) -> None:
     """
     Recursively load folder metadata for a path and its subdirectories.
-    
+
     This function now respects parent folder configuration - if a folder has
     show_files: false in its when condition, it will skip loading metadata
     from its subdirectories.
-    
+
     Args:
         cache: MetadataCache to populate with folder metadata
         path: Path to the folder to scan
@@ -290,15 +266,15 @@ def load_folder_metadata_recursive(cache: MetadataCache, path: Path, error_colle
     """
     try:
         # Load metadata for current folder first
-        metadata = load_folder_metadata(path, error_collector)
+        metadata = load_folder_metadata(path, cache.config.tags, error_collector)
         if metadata:
             cache.set_folder_metadata(path, metadata)
-        
+
         # Check if we should skip loading subdirectory metadata
         should_skip_subdirs = False
         if metadata:
-            should_skip_subdirs = metadata.should_hide_files(cache.config.tags)
-        
+            should_skip_subdirs = not metadata.show_files
+
         # If show_files is false, skip loading subdirectory metadata
         if should_skip_subdirs:
             return
@@ -545,7 +521,7 @@ def build_file_tree_from_cache(
                 if item.name == 'AGENTS.md':
                     continue
                 frontmatter = parse_frontmatter(item)
-                repo_layout_meta = parse_hint_metadata(frontmatter, item, error_collector)
+                repo_layout_meta = parse_hint_metadata(frontmatter, item, cache.config.tags, error_collector)
                 if repo_layout_meta:
                     repo_layout_mds.append(repo_layout_meta)
                     cache.repo_layout_metadata[item] = repo_layout_meta
@@ -632,10 +608,10 @@ def build_file_tree_from_cache(
                     # Get cached folder metadata
                     folder_metadata = cache.get_folder_metadata(item)
 
-                    # Check if when condition matches (show_files should be false)
+                    # Check if show_files is false (when condition was applied at parse phase)
                     should_hide_files = False
                     if folder_metadata:
-                        should_hide_files = folder_metadata.should_hide_files(cache.config.tags)
+                        should_hide_files = not folder_metadata.show_files
 
                     if should_hide_files and folder_metadata and folder_metadata.meta:
                         # When condition matches, use meta as metadata
@@ -697,7 +673,7 @@ def build_file_tree_from_cache(
     # Handle root folder metadata
     root_metadata = None
     if cache.root_metadata and cache.root_metadata.meta:
-        should_hide_files = cache.root_metadata.should_hide_files(cache.config.tags)
+        should_hide_files = not cache.root_metadata.show_files
 
         if should_hide_files:
             # When condition matches, set root metadata

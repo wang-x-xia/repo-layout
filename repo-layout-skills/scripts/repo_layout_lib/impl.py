@@ -174,14 +174,7 @@ def load_folder_metadata(path: Path, tags: Optional[List[str]] = None, error_col
         files = agents_repo_layout.files
         entry_point = agents_repo_layout.entry_point
         name_patterns = agents_repo_layout.name_patterns
-        show_files = meta.get('show_files', True) if meta else True
-    else:
-        # Try to extract basic metadata manually if parsing failed
-        repo_layout = frontmatter.get('repo-layout')
-        if repo_layout and isinstance(repo_layout, dict):
-            meta = repo_layout.get('meta')
-            entry_point = repo_layout.get('entry_point')
-            show_files = meta.get('show_files', True) if meta else True
+        show_files = agents_repo_layout.show_files
     
     # Validate entry_point
     if entry_point:
@@ -608,27 +601,24 @@ def build_file_tree_from_cache(
                     # Get cached folder metadata
                     folder_metadata = cache.get_folder_metadata(item)
 
-                    # Check if show_files is false (when condition was applied at parse phase)
-                    should_hide_files = False
-                    if folder_metadata:
-                        should_hide_files = not folder_metadata.show_files
+                    child_folder = FolderNode(
+                        name=item.name,
+                        children={},
+                        meta=folder_metadata.meta if folder_metadata else None,
+                        has_agents_md=(folder_metadata is not None)
+                    )
+                    # When condition matches with show_files: false, hide files but keep meta
+                    folder_node.children[item.name] = FolderNode(
+                        name=item.name,
+                        children={},
+                        meta=folder_metadata.meta if folder_metadata else None,
+                        has_agents_md=(folder_metadata is not None)
+                    )
 
-                    if should_hide_files and folder_metadata and folder_metadata.meta:
-                        # When condition matches, use meta as metadata
-                        folder_node.children[item.name] = FolderNode(
-                            name=item.name,
-                            children={},
-                            meta=folder_metadata.meta,
-                            has_agents_md=(folder_metadata is not None)
-                        )
+                    if folder_metadata and not folder_metadata.show_files:
+                        continue
                     else:
                         # Create folder node and recurse
-                        child_folder = FolderNode(
-                            name=item.name,
-                            children={},
-                            meta=folder_metadata.meta if folder_metadata else None,
-                            has_agents_md=(folder_metadata is not None)
-                        )
                         folder_node.children[item.name] = child_folder
                         build_tree_recursive(item, child_folder)
 

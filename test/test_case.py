@@ -141,24 +141,39 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
 
             if not return_code_match:
                 case_passed = False
-                case_errors.append(f"Return code: expected {expected_return_code}, got {return_code}")
+                case_errors.append({
+                    "code": "return_code_mismatch",
+                    "expected": expected_return_code,
+                    "actual": return_code
+                })
 
             # Check stdout
             stdout_path = result_dir / stdout_file
             if not stdout_path.exists():
                 case_passed = False
-                case_errors.append(f"Stdout file not found: {stdout_path}")
+                case_errors.append({
+                    "code": "stdout_file_not_found",
+                    "path": str(stdout_path)
+                })
             else:
                 with open(stdout_path, 'r', encoding='utf-8') as f:
                     expected_stdout = f.read()
                 if stdout != expected_stdout:
                     case_passed = False
-                    case_errors.append(f"Stdout does not match {stdout_file}")
+                    case_errors.append({
+                        "code": "stdout_mismatch",
+                        "file": stdout_file,
+                        "actual": stdout,
+                        "expected": expected_stdout
+                    })
 
             # Check stderr (must be empty for success cases, can have content for error cases)
             if expected_return_code == 0 and stderr.strip():
                 case_passed = False
-                case_errors.append(f"Stderr should be empty but got: {stderr}")
+                case_errors.append({
+                    "code": "stderr_not_empty",
+                    "stderr": stderr
+                })
 
             # Build result
             verify_result = {
@@ -177,7 +192,11 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
             if not return_code_match:
                 failed_cases.append({
                     "name": name,
-                    "errors": [f"Return code: expected {expected_return_code}, got {return_code}"]
+                    "errors": [{
+                        "code": "return_code_mismatch",
+                        "expected": expected_return_code,
+                        "actual": return_code
+                    }]
                 })
                 continue
 
@@ -194,7 +213,10 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
                 else:
                     failed_cases.append({
                         "name": name,
-                        "errors": [f"Return code is 0 but stderr has content: {stderr}"]
+                        "errors": [{
+                            "code": "stderr_not_empty",
+                            "stderr": stderr
+                        }]
                     })
                     continue
 

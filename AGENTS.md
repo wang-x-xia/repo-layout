@@ -10,7 +10,7 @@ repo-layout:
 ## 项目结构
 
 ```yaml
-# :repo-layout: uv run repo-layout-skills\scripts\file_tree.py  
+# :repo-layout: uv run repo-layout-skills/scripts/file_tree.py  
 :labels:
 - AGENTS.md
 :meta: This prject is an Agent Skill that helps understand and manage the layout of

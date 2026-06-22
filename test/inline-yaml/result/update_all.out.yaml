@@ -13,6 +13,9 @@ up_to_date:
 - command: echo test
   file: up_to_date_1.md
   line: 3
+- command: echo test2
+  file: up_to_date_2.md
+  line: 3
 updated:
 - command: echo "block 1 output"
   file: multiple_blocks.md
@@ -22,9 +25,6 @@ updated:
   line: 8
 - command: echo "nested content"
   file: nested/nested_file.md
-  line: 3
-- command: echo "same content 2"
-  file: up_to_date_2.md
   line: 3
 - command: echo "updated content 1"
   file: updated_1.md

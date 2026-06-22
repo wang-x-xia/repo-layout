@@ -183,6 +183,9 @@ def update_file(file_path: Path, root_dir: Optional[Path] = None, dry_run: bool 
             if results[i][0] == 'success':
                 results[i] = ('up_to_date', results[i][1])
     
+    # Reverse results to match original block order
+    results.reverse()
+    
     return results
 
 

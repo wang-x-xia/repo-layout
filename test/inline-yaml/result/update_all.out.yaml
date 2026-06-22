@@ -10,19 +10,16 @@ failed:
   returncode: 1
   stdout: ''
 up_to_date:
-- command: echo "test output"
-  file: test.md
-  line: 3
 - command: echo test
   file: up_to_date_1.md
   line: 3
 updated:
-- command: echo "block 2 output"
-  file: multiple_blocks.md
-  line: 8
 - command: echo "block 1 output"
   file: multiple_blocks.md
   line: 3
+- command: echo "block 2 output"
+  file: multiple_blocks.md
+  line: 8
 - command: echo "nested content"
   file: nested/nested_file.md
   line: 3

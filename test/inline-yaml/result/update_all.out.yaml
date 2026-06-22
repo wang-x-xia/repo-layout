@@ -23,16 +23,16 @@ updated:
 - command: echo "block 1 output"
   file: multiple_blocks.md
   line: 3
+- command: echo "nested content"
+  file: nested/nested_file.md
+  line: 3
+- command: echo "same content 2"
+  file: up_to_date_2.md
+  line: 3
 - command: echo "updated content 1"
   file: updated_1.md
   line: 3
 - command: echo "updated content 2"
   file: updated_2.md
-  line: 3
-- command: echo "same content 2"
-  file: up_to_date_2.md
-  line: 3
-- command: echo "nested content"
-  file: nested/nested_file.md
   line: 3
 

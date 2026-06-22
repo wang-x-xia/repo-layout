@@ -204,7 +204,7 @@ def update_all(root_dir: Path, dry_run: bool = False) -> Dict[str, Any]:
         'failed': []
     }
     
-    for md_file in root_dir.rglob('*.md'):
+    for md_file in sorted(root_dir.rglob('*.md')):
         block_results = update_file(md_file, root_dir=root_dir, dry_run=dry_run)
         
         for status, block_data in block_results:

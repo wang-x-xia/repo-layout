@@ -17,18 +17,46 @@ from repo_layout_lib.error import ErrorCollector
 from repo_layout_lib.yaml_utils import dump, YAML_BLANK
 
 
-def file_tree_to_dict(tree: FileTree, show_file_meta_md: str = 'show', show_folder_agents_md: str = 'show') -> Dict[str, Any]:
+def _format_file_key(name: str, labels: list) -> str:
+    """
+    Format a file key with labels.
+
+    Args:
+        name: File name
+        labels: List of labels to append
+
+    Returns:
+        Formatted file key with labels
+    """
+    if labels:
+        return f"{name}({','.join(labels)})"
+    return name
+
+
+def _format_folder_key(name: str, labels: list) -> str:
+    """
+    Format a folder key with labels.
+
+    Args:
+        name: Folder name
+        labels: List of labels to append after slash
+
+    Returns:
+        Formatted folder key with labels
+    """
+    if labels:
+        return f"{name}/({','.join(labels)})"
+    return f"{name}/"
+
+
+def file_tree_to_dict(tree: FileTree) -> Dict[str, Any]:
     """
     Convert FileTree to dict for YAML output with formatting:
     1. Add '/' suffix to folder names
     2. Merge folders with only one child (flatten the path)
-    3. Handle {files}.{ext}.md files based on show_file_meta_md mode
-    4. Handle AGENTS.md files based on show_folder_agents_md mode
 
     Args:
         tree: FileTree object to convert
-        show_file_meta_md: Mode for displaying {files}.{ext}.md files ('omit', 'hint', or 'show')
-        show_folder_agents_md: Mode for displaying AGENTS.md files ('omit', 'hint', or 'show')
 
     Returns:
         Dictionary formatted for YAML output
@@ -43,6 +71,10 @@ def file_tree_to_dict(tree: FileTree, show_file_meta_md: str = 'show', show_fold
     if tree.root.meta:
         result[':meta'] = tree.root.meta
 
+    # Handle root folder labels
+    if tree.root.labels:
+        result[':labels'] = tree.root.labels
+
     # Handle root folder repo-layout metadata
     if tree.root.merged_meta_from_md:
         for key, value in tree.root.merged_meta_from_md.items():
@@ -50,59 +82,41 @@ def file_tree_to_dict(tree: FileTree, show_file_meta_md: str = 'show', show_fold
 
     # Process root folder children (is_root=True for root level files)
     for name, node in tree.root.children.items():
-        result.update(_node_to_dict_entry(name, node, show_file_meta_md, show_folder_agents_md, is_root=True))
+        result.update(_node_to_dict_entry(name, node, is_root=True))
 
     return result
 
 
-def _node_to_dict_entry(name: str, node: TreeNode, show_file_meta_md: str = 'show', show_folder_agents_md: str = 'show', is_root: bool = False) -> Dict[str, Any]:
+def _node_to_dict_entry(name: str, node: TreeNode, is_root: bool = False) -> Dict[str, Any]:
     """
     Convert a tree node to a dict entry (key-value pair).
 
     Args:
         name: Name of the node
         node: Tree node (FileNode or FolderNode)
-        show_file_meta_md: Mode for displaying {files}.{ext}.md files ('omit', 'hint', or 'show')
-        show_folder_agents_md: Mode for displaying AGENTS.md files ('omit', 'hint', or 'show')
         is_root: Whether this node is at root level
 
     Returns:
         Dictionary with a single key-value pair
     """
     if isinstance(node, FileNode):
+        # Skip if show is False
+        if not node.show:
+            return {}
+
         # Skip repo-layout md files (configuration files, not metadata files)
         if node.is_repo_layout_md:
             return {}
 
-        # Check if this is AGENTS.md file
+        # Check if this is AGENTS.md file - always show it (labels handled by folderLabel)
         if name == 'AGENTS.md':
-            if show_folder_agents_md == 'omit':
-                # Skip this file entirely
-                return {}
-            elif show_folder_agents_md == 'hint':
-                # For non-root AGENTS.md, skip this file (hint will be added to folder)
-                # For root AGENTS.md, show it (since root can't be marked with suffix)
-                if is_root:
-                    description = node.description if node.description is not None else YAML_BLANK
-                    return {name: description}
-                else:
-                    return {}
-            else:  # show
-                # Show normally
-                description = node.description if node.description is not None else YAML_BLANK
-                return {name: description}
-        # Check if this is a metadata file
+            description = node.description if node.description is not None else YAML_BLANK
+            return {name: description}
+        # Check if this is a metadata file (meta_type means it IS a metadata file)
         elif node.meta_type:
-            if show_file_meta_md == 'omit':
-                # Skip this file entirely
-                return {}
-            elif show_file_meta_md == 'hint':
-                # Skip this file, but the hint will be added to the original file
-                return {}
-            else:  # show
-                # Show normally
-                description = node.description if node.description is not None else YAML_BLANK
-                return {name: description}
+            # Metadata files are handled by the show field (set by show_file_meta_md logic in impl.py)
+            description = node.description if node.description is not None else YAML_BLANK
+            return {name: description}
         else:
             # Regular file
             # Check if repo-layout show_files is false
@@ -111,27 +125,23 @@ def _node_to_dict_entry(name: str, node: TreeNode, show_file_meta_md: str = 'sho
                 return {}
 
             description = node.description if node.description is not None else YAML_BLANK
-            # In hint mode, add (.md) suffix to key if file has corresponding metadata file
-            key = name
-            if show_file_meta_md == 'hint' and node.has_meta_type:
-                key = f"{name}(.md)"
+            # Add labels if present
+            key = _format_file_key(name, node.labels)
             return {key: description}
     elif isinstance(node, FolderNode):
         # Folder node - always add '/' suffix for consistency
-        return _folder_node_to_dict_entry(name, node, show_file_meta_md, show_folder_agents_md, is_root)
+        return _folder_node_to_dict_entry(name, node, is_root)
     else:
         raise TypeError(f"Unknown node type: {type(node)}")
 
 
-def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md: str = 'show', show_folder_agents_md: str = 'show', is_root: bool = False) -> Dict[str, Any]:
+def _folder_node_to_dict_entry(name: str, folder: FolderNode, is_root: bool = False) -> Dict[str, Any]:
     """
     Convert a folder node to a dict entry with formatting logic.
 
     Args:
         name: Folder name
         folder: FolderNode to convert
-        show_file_meta_md: Mode for displaying {files}.{ext}.md files ('omit', 'hint', or 'show')
-        show_folder_agents_md: Mode for displaying AGENTS.md files ('omit', 'hint', or 'show')
         is_root: Whether this node is at root level
 
     Returns:
@@ -139,16 +149,13 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
     """
     # Handle when condition with show_files: false (no children, only metadata)
     if folder.meta and not folder.children:
-        folder_key = f"{name}/"
-        # In hint mode, add (+AI) suffix if folder has AGENTS.md
-        if show_folder_agents_md == 'hint' and folder.has_agents_md:
-            folder_key = f"{name}(+AI)/"
+        folder_key = _format_folder_key(name, folder.labels)
         return {folder_key: folder.meta}
 
     # Process children recursively (children are not at root level)
     children_dict = {}
     for child_name, child_node in folder.children.items():
-        children_dict.update(_node_to_dict_entry(child_name, child_node, show_file_meta_md, show_folder_agents_md, is_root=False))
+        children_dict.update(_node_to_dict_entry(child_name, child_node, is_root=False))
 
     # Add metadata if present
     if folder.meta:
@@ -171,10 +178,7 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
         meta_keys = [k for k in children_dict.keys() if k.startswith(':')]
         if meta_keys:
             # Create a new merged dict with metadata, keep folder with '/'
-            merged_key = f"{name}/"
-            # In hint mode, add (+AI) suffix if folder has AGENTS.md
-            if show_folder_agents_md == 'hint' and folder.has_agents_md:
-                merged_key = f"{name}(+AI)/"
+            merged_key = _format_folder_key(name, folder.labels)
             merged_value = {child_key: child_value}
             for meta_key in meta_keys:
                 merged_value[meta_key] = children_dict[meta_key]
@@ -193,15 +197,9 @@ def _folder_node_to_dict_entry(name: str, folder: FolderNode, show_file_meta_md:
         # Multiple children or no children, keep folder with '/' suffix
         # Use YAML_BLANK for empty folders (no children and no metadata)
         if not folder.children and not folder.meta:
-            folder_key = f"{name}/"
-            # In hint mode, add (+AI) suffix if folder has AGENTS.md
-            if show_folder_agents_md == 'hint' and folder.has_agents_md:
-                folder_key = f"{name}(+AI)/"
+            folder_key = _format_folder_key(name, folder.labels)
             return {folder_key: YAML_BLANK}
-        folder_key = f"{name}/"
-        # In hint mode, add (+AI) suffix if folder has AGENTS.md
-        if show_folder_agents_md == 'hint' and folder.has_agents_md:
-            folder_key = f"{name}(+AI)/"
+        folder_key = _format_folder_key(name, folder.labels)
         return {folder_key: children_dict if children_dict else YAML_BLANK}
 
 # Error codes
@@ -222,15 +220,11 @@ def main():
                        help='Tags to filter file display (default: standard, use empty list to show all files)')
     parser.add_argument('--show-file-meta-md', choices=['omit', 'hint', 'show'], default='hint',
                        help='Control display of {files}.{ext}.md files: omit (hide), hint (hide and mark original with (.md)), show (show normally)')
-    parser.add_argument('--show-folder-agents-md', choices=['omit', 'hint', 'show'], default='hint',
-                       help='Control display of AGENTS.md files: omit (hide), hint (hide and mark folder with (+AI)), show (show normally)')
 
     args = parser.parse_args()
     root_path = args.path
     use_gitignore = not args.no_gitignore
     tags = args.tags
-    show_file_meta_md = args.show_file_meta_md
-    show_folder_agents_md = args.show_folder_agents_md
 
     error_collector = ErrorCollector()
     script_path = Path(__file__)
@@ -243,11 +237,12 @@ def main():
             tags=tags,
             script_path=script_path,
             locale="zh-CN",
-            error_collector=error_collector
+            error_collector=error_collector,
+            show_file_meta_md=args.show_file_meta_md
         )
 
         # Convert FileTree to dict with formatting (add '/' suffix, merge single-child folders)
-        tree_dict = file_tree_to_dict(tree, show_file_meta_md, show_folder_agents_md)
+        tree_dict = file_tree_to_dict(tree)
 
         # Output as YAML with metadata sorting
         yaml_output = dump(tree_dict)

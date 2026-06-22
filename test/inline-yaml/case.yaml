@@ -1,4 +1,4 @@
-cli: uv run ../../../repo-layout-skills/scripts/inline_yaml.py
+cli: uv run --quiet ../../../repo-layout-skills/scripts/inline_yaml.py
 cases:
 - name: update_all
   cli-params: "update-all --dry-run"

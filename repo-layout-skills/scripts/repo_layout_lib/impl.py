@@ -24,6 +24,7 @@ from .models import (
 )
 from .error import RepoLayoutValidationError
 from .when import apply_when_conditions
+from .known_files import KnownFiles
 
 
 def parse_folder_metadata(frontmatter: Optional[Dict[str, Any]], md_file_path: Path, tags: Optional[List[str]] = None, error_collector: Optional[Any] = None) -> Optional[FolderMetadata]:
@@ -327,13 +328,7 @@ def load_file_metadata(
     if folder_metadata and folder_metadata.files:
         desc_from_folder = folder_metadata.files.get(file_path.name)
     desc_from_md = get_file_description_from_md_file(file_path)
-    desc_from_known = cache.known_files.get(file_path.name)
-
-    # Extract description from known_files if it's a dict
-    if isinstance(desc_from_known, dict):
-        desc_from_known = desc_from_known.get('description')
-    elif not isinstance(desc_from_known, str):
-        desc_from_known = None
+    desc_from_known = cache.known_files.get_file_description(file_path.name) if cache.known_files else None
 
     # Determine source and handle conflicts
     description = None
@@ -406,8 +401,7 @@ def initialize_cache(
     
     # Load known files
     if script_path:
-        from repo_layout_lib.known_files import load_known_files
-        cache.known_files = load_known_files(script_path, locale)
+        cache.known_files = KnownFiles(script_path, locale)
     
     return cache
 
@@ -418,7 +412,8 @@ def build_file_tree(
     tags: Optional[List[str]] = None,
     script_path: Optional[Path] = None,
     locale: str = "zh-CN",
-    error_collector: Optional[Any] = None
+    error_collector: Optional[Any] = None,
+    show_file_meta_md: str = 'hint'
 ) -> FileTree:
     """
     Build file tree structure - unified entry point.
@@ -449,7 +444,7 @@ def build_file_tree(
     )
 
     # Step 2-4: Build tree from cache (handles all metadata loading internally)
-    return build_file_tree_from_cache(cache, error_collector)
+    return build_file_tree_from_cache(cache, error_collector, show_file_meta_md)
 
 
 def get_meta_file_type(filename: str) -> Optional[str]:
@@ -475,7 +470,8 @@ def get_meta_file_type(filename: str) -> Optional[str]:
 
 def build_file_tree_from_cache(
     cache: MetadataCache,
-    error_collector: Optional[Any] = None
+    error_collector: Optional[Any] = None,
+    show_file_meta_md: str = 'hint'
 ) -> FileTree:
     """
     Build file tree structure from cached metadata.
@@ -483,6 +479,7 @@ def build_file_tree_from_cache(
     Args:
         cache: MetadataCache with all loaded metadata
         error_collector: Optional ErrorCollector for warnings
+        show_file_meta_md: Mode for displaying {files}.{ext}.md files ('omit', 'hint', or 'show')
 
     Returns:
         FileTree object representing the file tree
@@ -492,16 +489,33 @@ def build_file_tree_from_cache(
     load_folder_metadata_recursive(cache, cache.config.root_path, error_collector)
 
     root = cache.config.root_path
-    root_folder = FolderNode(name=root.name, children={}, meta=None, has_agents_md=(cache.root_metadata is not None))
+    root_folder = FolderNode(
+        name=root.name,
+        children={},
+        meta=None,
+        has_agents_md=(cache.root_metadata is not None),
+        labels=[]
+    )
 
-    def build_tree_recursive(path: Path, folder_node: FolderNode) -> None:
+    def build_tree_recursive(path: Path, folder_node: FolderNode, show_file_meta_md: str = 'hint') -> None:
         """
         Recursively build tree structure from cached metadata.
 
         Args:
             path: Current directory path
             folder_node: Current folder node to populate
+            show_file_meta_md: Mode for displaying {files}.{ext}.md files ('omit', 'hint', or 'show')
         """
+        # Collect folder labels from files in this folder
+        try:
+            for file_item in path.iterdir():
+                if file_item.is_file():
+                    folder_label = cache.known_files.get_folder_label(file_item.name) if cache.known_files else None
+                    if folder_label and folder_label not in folder_node.labels:
+                        folder_node.labels.append(folder_label)
+        except PermissionError:
+            pass
+
         # Get folder metadata for this directory
         folder_metadata = cache.get_folder_metadata(path)
 
@@ -587,13 +601,44 @@ def build_file_tree_from_cache(
                         show_file_metadata = covering_repo_layouts[0].show_files
 
                     # Add file node to folder
+                    meta_type = get_meta_file_type(item.name)
+                    # Determine show value: use fileMetadata.show if not None, otherwise use KnownFile.showFile
+                    show_value = file_metadata.show if file_metadata.show is not None else None
+                    if show_value is None and cache.known_files:
+                        known_file_entry = cache.known_files.known_files.get(item.name)
+                        if known_file_entry:
+                            show_value = known_file_entry.showFile
+                    if show_value is None:
+                        show_value = True  # Default to True
+
+                    # Handle metadata files ({file}.{ext}.md) based on show_file_meta_md
+                    labels = []
+                    if meta_type:
+                        # This IS a metadata file
+                        if show_file_meta_md == 'omit':
+                            show_value = False
+                        elif show_file_meta_md == 'hint':
+                            show_value = False
+                        # show: use default from KnownFile (show_value already set above)
+                        labels = [".md"]
+                    else:
+                        # Regular file - check if it has metadata in hint mode
+                        if show_file_meta_md == 'hint':
+                            # Check if there's a corresponding metadata file
+                            for meta_file in path.iterdir():
+                                if meta_file.is_file() and meta_file.name == f"{item.name}.md":
+                                    labels = [".md"]
+                                    break
+
                     folder_node.children[item.name] = FileNode(
                         name=item.name,
                         description=file_metadata.description,
-                        meta_type=get_meta_file_type(item.name),
+                        meta_type=meta_type,
                         repo_layout_md=repo_layout_md_path,
                         show_file_metadata=show_file_metadata,
-                        is_repo_layout_md=is_repo_layout_md
+                        is_repo_layout_md=is_repo_layout_md,
+                        labels=labels,
+                        show=show_value if show_value is not None else True
                     )
 
                 elif item.is_dir():
@@ -604,29 +649,36 @@ def build_file_tree_from_cache(
                         name=item.name,
                         children={},
                         meta=folder_metadata.meta if folder_metadata else None,
-                        has_agents_md=(folder_metadata is not None)
+                        has_agents_md=(folder_metadata is not None),
+                        labels=[]
                     )
+                    
+                    # Collect folder labels from files in this folder (always do this, even if show_files is false)
+                    try:
+                        for file_item in item.iterdir():
+                            if file_item.is_file():
+                                folder_label = cache.known_files.get_folder_label(file_item.name) if cache.known_files else None
+                                if folder_label and folder_label not in child_folder.labels:
+                                    child_folder.labels.append(folder_label)
+                    except PermissionError:
+                        pass
+
                     # When condition matches with show_files: false, hide files but keep meta
-                    folder_node.children[item.name] = FolderNode(
-                        name=item.name,
-                        children={},
-                        meta=folder_metadata.meta if folder_metadata else None,
-                        has_agents_md=(folder_metadata is not None)
-                    )
+                    folder_node.children[item.name] = child_folder
 
                     if folder_metadata and not folder_metadata.show_files:
                         continue
                     else:
                         # Create folder node and recurse
                         folder_node.children[item.name] = child_folder
-                        build_tree_recursive(item, child_folder)
+                        build_tree_recursive(item, child_folder, show_file_meta_md)
 
         except PermissionError:
             # Skip directories we don't have permission to access
             pass
 
     # Build tree structure
-    build_tree_recursive(root, root_folder)
+    build_tree_recursive(root, root_folder, show_file_meta_md)
 
     # Post-process: mark files that have corresponding metadata files
     def mark_has_meta_type(folder_node: FolderNode) -> None:

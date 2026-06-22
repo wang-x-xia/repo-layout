@@ -11,11 +11,11 @@ repo-layout:
 
 ```yaml
 # :repo-layout: uv run repo-layout-skills\scripts\file_tree.py  
+:labels:
+- AGENTS.md
 :meta: This prject is an Agent Skill that helps understand and manage the layout of
   files within a folder.
-AGENTS.md: AI Agents的README
-repo-layout-skills/:
-  SKILL.md: Agent Skill描述文件
+repo-layout-skills/(SKILL.md):
   reference/known_files.zh-CN.yaml:
   scripts/:
     file_tree.py:
@@ -29,7 +29,7 @@ repo-layout-skills/:
       models.py:
       when.py:
       yaml_utils.py:
-test(+AI)/:
+test/(AGENTS.md):
   '{case}/':
     :meta: Each folder is a test group with multiple test cases, "core-success" for
       success cases, "core-error" for error cases

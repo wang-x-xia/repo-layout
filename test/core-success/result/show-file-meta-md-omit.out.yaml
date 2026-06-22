@@ -1,10 +1,11 @@
+:labels:
+- AGENTS.md
 :meta:
   description: Test case - Basic structure covering all features
-AGENTS.md: AI Agents的README
 file1.txt: Description from AGENTS.md files field
 file2.txt: Description from .md file
 file3.txt:
-md_repo_layout(+AI)/:
+md_repo_layout/(AGENTS.md):
   :layout-layout_files: Test
   :layout-layout_include: Test
   :layout-layout_include_exclude: Test
@@ -14,7 +15,7 @@ md_repo_layout(+AI)/:
 nested/nested/:
   nested/nested/single_file.txt:
   nested_b/nested/:
-tags(+AI)/:
+tags/(AGENTS.md):
   :meta:
     description: Test directory for custom tags
 test.log:

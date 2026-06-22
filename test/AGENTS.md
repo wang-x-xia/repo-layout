@@ -73,6 +73,8 @@ uv run test/test_case.py verify-all
 
 **case.yaml 格式：**
 ```yaml
+cli: uv run --quiet ../../../repo-layout-skills/scripts/script.py
+cases:
 - name: core-success
   # 脚本参数（空字符串表示无特殊参数）
   cli-params: ""
@@ -82,3 +84,6 @@ uv run test/test_case.py verify-all
   # 如果配置了此字段，只校验不生成，用来校验改命令匹配前面的某个case。
   std-out: some.yaml
 ```
+
+**注意事项：**
+- `cli` 字段应使用 `uv run --quiet` 来运行脚本，以避免 uv 的输出干扰测试结果。

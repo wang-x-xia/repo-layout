@@ -23,6 +23,8 @@ class FileNode(BaseModel):
     repo_layout_md: Optional[Path] = None  # Path to repo-layout md file that covers this file
     show_file_metadata: bool = True  # Whether to show file metadata (controlled by repo-layout show_files)
     is_repo_layout_md: bool = False  # Whether this file is a repo-layout md file
+    labels: List[str] = Field(default_factory=list)  # Labels for the file (e.g., ".md" for metadata files)
+    show: bool = True  # Whether to show this file (from fileMetadata.show or KnownFile.showFile)
 
 
 class FolderNode(BaseModel):
@@ -32,6 +34,7 @@ class FolderNode(BaseModel):
     meta: Optional[Any] = None
     has_agents_md: bool = False  # Whether folder has AGENTS.md file
     merged_meta_from_md: Optional[Dict[str, Any]] = None  # Merged metadata from repo-layout md files
+    labels: List[str] = Field(default_factory=list)  # Labels for the folder (e.g., "+AI" for folders with AGENTS.md)
 
 
 # Type alias for tree nodes (can be either file or folder)
@@ -114,6 +117,7 @@ class FileMetadata(ConfigModel):
     path: Path
     description: Optional[str] = None
     source: Optional[str] = None  # 'agents', 'md_file', 'known_files', or None
+    show: Optional[bool] = None
 
 
 class LoadConfig(BaseModel):
@@ -140,7 +144,7 @@ class MetadataCache(BaseModel):
     folder_metadata: Dict[Path, FolderMetadata] = Field(default_factory=dict)
     file_metadata: Dict[Path, FileMetadata] = Field(default_factory=dict)
     git_ignored_files: Set[str] = Field(default_factory=set)
-    known_files: Dict[str, Any] = Field(default_factory=dict)
+    known_files: Optional[Any] = None  # KnownFiles instance
     repo_layout_metadata: Dict[Path, HintMetadata] = Field(default_factory=dict)
     file_to_repo_layout: Dict[Path, Path] = Field(default_factory=dict)
     

@@ -1,7 +1,8 @@
+:labels:
+- AGENTS.md
 :meta:
   description: Test case - Conflict description
-AGENTS.md: AI Agents的README
-conflict_file_description(+AI)/:
+conflict_file_description/(AGENTS.md):
   :meta:
     description: Test conflict description
   file1.txt(.md):
@@ -11,17 +12,17 @@ conflict_repo_layout_coverage/:
   test.txt:
 conflict_repo_layout_meta/:
   :layout-conflict_meta: Test
-file_not_in_name_patterns(+AI)/:
+file_not_in_name_patterns/(AGENTS.md):
   :meta:
     description: Test case - invalid name_patterns
-folder_not_in_name_patterns(+AI)/:
+folder_not_in_name_patterns/(AGENTS.md):
   :meta:
     description: Test case - folder not in name_patterns
   actual_folder/:
-invalid_entry_point(+AI)/:
+invalid_entry_point/(AGENTS.md):
   :meta:
     description: Test case - invalid entry_point
-invalid_name_patterns_type(+AI)/:
+invalid_name_patterns_type/(AGENTS.md):
 invalid_repo_layout_field/:
   invalid_field.md:
   test.txt:

@@ -2,6 +2,7 @@
 # requires-python = ">=3.8"
 # dependencies = [
 #     "pyyaml",
+#     "pydantic>=2.0",
 # ]
 # ///
 
@@ -12,30 +13,57 @@ import argparse
 import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
 
 # Set stdout encoding to UTF-8 for Windows compatibility
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
 
 
-def load_case_yaml(case_path: Path) -> List[Dict[str, Any]]:
-    """Load case.yaml file."""
+class CaseItem(BaseModel):
+    """Represents a single test case."""
+    name: str
+    cli_params: str = Field(default="", alias='cli-params')
+    return_code: int = Field(alias='return-code', default=0)
+    stdout: Optional[str] = Field(None, alias='stdout')
+    stderr: Optional[str] = Field(None, alias='stderr')
+
+
+class CaseConfig(BaseModel):
+    """Represents the case.yaml configuration with cli and cases."""
+    cli: str
+    cases: List[CaseItem]
+
+
+def load_case_yaml(case_path: Path) -> CaseConfig:
+    """Load case.yaml file using pydantic for validation."""
     case_file = case_path / "case.yaml"
     if not case_file.exists():
         print(f"Error: case.yaml not found in {case_path}")
         sys.exit(1)
     
     with open(case_file, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
-
-
-def run_command(cli_params: str, working_dir: Path) -> tuple[int, str, str]:
-    """Run command and return return code, stdout, stderr."""
-    base_cmd = "uv run --quiet ../../../repo-layout-skills/scripts/file_tree.py ."
-    if cli_params:
-        cmd = f"{base_cmd} {cli_params}"
+        data = yaml.safe_load(f)
+    
+    # Support both old format (array) and new format (struct with cli and cases)
+    if isinstance(data, list):
+        # Old format: array of cases, convert to new format
+        cases = [CaseItem(**case) for case in data]
+        return CaseConfig(cli="uv run --quiet ../../../repo-layout-skills/scripts/file_tree.py .", cases=cases)
+    elif isinstance(data, dict):
+        # New format: struct with cli and cases
+        return CaseConfig(**data)
     else:
-        cmd = base_cmd
+        print(f"Error: Invalid case.yaml format in {case_path}")
+        sys.exit(1)
+
+
+def run_command(cli: str, cli_params: str, working_dir: Path) -> tuple[int, str, str]:
+    """Run command and return return code, stdout, stderr."""
+    if cli_params:
+        cmd = f"{cli} {cli_params}"
+    else:
+        cmd = cli
     result = subprocess.run(
         cmd,
         shell=True,
@@ -49,7 +77,9 @@ def run_command(cli_params: str, working_dir: Path) -> tuple[int, str, str]:
 
 def verify_result(case_path: Path, generate: bool = False) -> dict:
     """Verify result files against expected behavior, or generate if generate=True."""
-    cases = load_case_yaml(case_path)
+    config = load_case_yaml(case_path)
+    cli = config.cli
+    cases = config.cases
     data_dir = case_path / "data"
     result_dir = case_path / "result"
 
@@ -84,22 +114,22 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
     failed_cases = []
 
     for case in cases:
-        name = case['name']
-        cli_params = case['cli-params']
-        expected_return_code = case['return-code']
-        std_out_file = case.get('std-out')
-        std_err_file = case.get('std-err')
+        name = case.name
+        cli_params = case.cli_params
+        expected_return_code = case.return_code
+        stdout_file = case.stdout
+        stderr_file = case.stderr
 
         # Default file names if not specified
-        if std_out_file is None:
-            std_out_file = f"{name}.out.yaml"
-        if std_err_file is None:
-            std_err_file = f"{name}.err.yaml"
+        if stdout_file is None:
+            stdout_file = f"{name}.out.yaml"
+        if stderr_file is None:
+            stderr_file = f"{name}.err.yaml"
 
         # Run command (common for all cases)
-        return_code, stdout, stderr = run_command(cli_params, data_dir)
+        return_code, stdout, stderr = run_command(cli, cli_params, data_dir)
         return_code_match = return_code == expected_return_code
-        has_configured_output = case.get('std-out') is not None or case.get('std-err') is not None
+        has_configured_output = case.stdout is not None or case.stderr is not None
 
         # Determine if we should verify or generate
         should_verify = has_configured_output or not generate
@@ -114,7 +144,7 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
                 case_errors.append(f"Return code: expected {expected_return_code}, got {return_code}")
 
             # Check stdout
-            stdout_path = result_dir / std_out_file
+            stdout_path = result_dir / stdout_file
             if not stdout_path.exists():
                 case_passed = False
                 case_errors.append(f"Stdout file not found: {stdout_path}")
@@ -123,7 +153,7 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
                     expected_stdout = f.read()
                 if stdout != expected_stdout:
                     case_passed = False
-                    case_errors.append(f"Stdout does not match {std_out_file}")
+                    case_errors.append(f"Stdout does not match {stdout_file}")
 
             # Check stderr (must be empty for success cases, can have content for error cases)
             if expected_return_code == 0 and stderr.strip():
@@ -152,21 +182,25 @@ def verify_result(case_path: Path, generate: bool = False) -> dict:
                 continue
 
             # Save stdout
-            stdout_path = result_dir / std_out_file
+            stdout_path = result_dir / stdout_file
             with open(stdout_path, 'w', encoding='utf-8') as f:
                 f.write(stdout)
 
             # Diagnose stderr for success cases
             if return_code == 0 and stderr.strip():
-                failed_cases.append({
-                    "name": name,
-                    "errors": [f"Return code is 0 but stderr has content: {stderr}"]
-                })
-                continue
+                # Ignore uv installation messages
+                if 'Installed' in stderr or 'package' in stderr:
+                    pass
+                else:
+                    failed_cases.append({
+                        "name": name,
+                        "errors": [f"Return code is 0 but stderr has content: {stderr}"]
+                    })
+                    continue
 
             # Save stderr only for error cases (return-code != 0)
-            if return_code != 0 and std_err_file:
-                stderr_path = result_dir / std_err_file
+            if return_code != 0 and stderr_file:
+                stderr_path = result_dir / stderr_file
                 with open(stderr_path, 'w', encoding='utf-8') as f:
                     f.write(stderr)
 

@@ -11,14 +11,15 @@ repo-layout:
 
 ```yaml
 # :repo-layout: uv run repo-layout-skills\scripts\file_tree.py  
-:meta:
-  description: Repo Root
+:meta: This prject is an Agent Skill that helps understand and manage the layout of
+  files within a folder.
 AGENTS.md: AI Agents的README
 repo-layout-skills/:
   SKILL.md: Agent Skill描述文件
   reference/known_files.zh-CN.yaml:
   scripts/:
     file_tree.py:
+    inline_yaml.py:
     repo_layout_lib/:
       __init__.py: Python包初始化文件
       error.py:

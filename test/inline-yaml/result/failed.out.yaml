@@ -1,0 +1,9 @@
+failed:
+- command: exit 1
+  file: failed_1.md
+  line: 3
+  returncode: 1
+  stdout: ''
+up_to_date: []
+updated: []
+

@@ -1,0 +1,31 @@
+cli: uv run ../../../repo-layout-skills/scripts/inline_yaml.py
+cases:
+- name: update_all
+  cli-params: "update-all --dry-run"
+  return-code: 0
+- name: update_all_nested
+  cli-params: "update-all nested --dry-run"
+  return-code: 0
+- name: update_nested
+  cli-params: "update nested/nested_file.md --dry-run"
+  return-code: 0
+- name: failed
+  cli-params: "update failed_1.md --dry-run"
+  return-code: 0
+- name: updated
+  cli-params: "update updated_1.md --dry-run"
+  return-code: 0
+- name: up_to_date
+  cli-params: "update up_to_date_1.md --dry-run"
+  return-code: 0
+- name: multiple_blocks
+  cli-params: "update multiple_blocks.md --dry-run"
+  return-code: 0
+- name: check_up_to_date
+  cli-params: "update up_to_date_1.md --dry-run --any-not-up-to-date-exit-1"
+  return-code: 0
+  stdout: up_to_date.out.yaml
+- name: check_not_up_to_date
+  cli-params: "update updated_1.md --dry-run --any-not-up-to-date-exit-1"
+  return-code: 1
+  stdout: updated.out.yaml

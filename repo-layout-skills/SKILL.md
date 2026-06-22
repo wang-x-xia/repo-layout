@@ -37,6 +37,26 @@ uv run scripts/file_tree.py /path/to/directory --no-gitignore
 uv run scripts/file_tree.py --tags tag1 tag2
 ```
 
+### inline_yaml.py 工具
+
+在 markdown 文件中内联执行命令并更新 YAML 代码块，推荐用于更新 file_tree YAML：
+
+```bash
+# 更新单个 markdown 文件中的 YAML 代码块
+uv run scripts/inline_yaml.py update file.md
+
+# 查看更多功能和参数
+uv run scripts/inline_yaml.py --help
+```
+
+在 markdown 文件中使用以下格式标记需要执行的命令：
+
+```yaml
+# :repo-layout: echo "example output"
+```
+
+通常，根据你的Skills所在的文件夹，改成类似`uv run .agents/skills/repo-layout-skills/scripts/file_tree.py`的命令，工具会将输出替换到 YAML 代码块中。
+
 ## Metadata配置
 
 ### 两级Metadata系统

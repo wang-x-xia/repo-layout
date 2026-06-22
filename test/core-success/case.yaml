@@ -1,3 +1,5 @@
+cli: uv run --quiet ../../../repo-layout-skills/scripts/file_tree.py .
+cases:
 - name: no-param
   cli-params: ""
   return-code: 0
@@ -16,7 +18,7 @@
 - name: show-file-meta-md-hint
   cli-params: "--show-file-meta-md hint"
   return-code: 0
-  std-out: no-param.out.yaml
+  stdout: no-param.out.yaml
 - name: show-file-meta-md-show
   cli-params: "--show-file-meta-md show"
   return-code: 0
@@ -26,7 +28,7 @@
 - name: show-folder-agents-md-hint
   cli-params: "--show-folder-agents-md hint"
   return-code: 0
-  std-out: no-param.out.yaml
+  stdout: no-param.out.yaml
 - name: show-folder-agents-md-show
   cli-params: "--show-folder-agents-md show"
   return-code: 0

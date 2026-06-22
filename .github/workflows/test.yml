@@ -21,3 +21,7 @@ jobs:
     - name: Run tests
       run: |
         uv run test/test_case.py verify-all
+
+    - name: Check AGENTS.md is up to date
+      run: |
+        uv run repo-layout-skills/scripts/inline_yaml.py update AGENTS.md --dry-run --any-not-up-to-date-exit-1

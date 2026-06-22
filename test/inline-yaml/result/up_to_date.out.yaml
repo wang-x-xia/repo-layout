@@ -1,0 +1,7 @@
+failed: []
+up_to_date:
+- command: echo test
+  file: up_to_date_1.md
+  line: 3
+updated: []
+

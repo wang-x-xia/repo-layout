@@ -1,0 +1,10 @@
+failed: []
+up_to_date: []
+updated:
+- command: echo "block 2 output"
+  file: multiple_blocks.md
+  line: 8
+- command: echo "block 1 output"
+  file: multiple_blocks.md
+  line: 3
+

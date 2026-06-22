@@ -1,0 +1,7 @@
+failed: []
+up_to_date: []
+updated:
+- command: echo "updated content 1"
+  file: updated_1.md
+  line: 3
+

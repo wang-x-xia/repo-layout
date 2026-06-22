@@ -2,6 +2,6 @@ failed: []
 up_to_date: []
 updated:
 - command: echo "nested content"
-  file: nested/nested_file.md
+  file: nested_file.md
   line: 3
 

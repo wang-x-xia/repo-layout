@@ -1,38 +1,38 @@
 failed:
 - command: exit 1
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/failed_1.md
+  file: failed_1.md
   line: 3
   returncode: 1
   stdout: ''
 - command: exit 1
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/failed_2.md
+  file: failed_2.md
   line: 3
   returncode: 1
   stdout: ''
 up_to_date:
 - command: echo "test output"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/test.md
+  file: test.md
   line: 3
 - command: echo test
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/up_to_date_1.md
+  file: up_to_date_1.md
   line: 3
 updated:
 - command: echo "block 2 output"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/multiple_blocks.md
+  file: multiple_blocks.md
   line: 8
 - command: echo "block 1 output"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/multiple_blocks.md
+  file: multiple_blocks.md
   line: 3
 - command: echo "updated content 1"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/updated_1.md
+  file: updated_1.md
   line: 3
 - command: echo "updated content 2"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/updated_2.md
+  file: updated_2.md
   line: 3
 - command: echo "same content 2"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/up_to_date_2.md
+  file: up_to_date_2.md
   line: 3
 - command: echo "nested content"
-  file: C:/Users/wangx68/repo-layout/test/inline-yaml/data/nested/nested_file.md
+  file: nested/nested_file.md
   line: 3
 

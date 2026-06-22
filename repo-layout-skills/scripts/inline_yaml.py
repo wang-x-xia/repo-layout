@@ -82,19 +82,20 @@ def run_command(command: str, cwd: Optional[Path] = None) -> Tuple[str, str, int
     return result.stdout, result.stderr, result.returncode
 
 
-def update_file(file_path: Path, dry_run: bool = False) -> List[Tuple[str, Dict[str, Any]]]:
+def update_file(file_path: Path, root_dir: Optional[Path] = None, dry_run: bool = False) -> List[Tuple[str, Dict[str, Any]]]:
     """
     Update a single markdown file with command results.
-    
+
     Args:
         file_path: Path to the markdown file
+        root_dir: Root directory for relative path calculation
         dry_run: If True, don't actually modify files
-    
+
     Returns:
         List of tuples (status, block_data)
     """
     results = []
-    
+
     if not file_path.exists():
         return [('error', {
             'file': str(file_path),
@@ -102,22 +103,32 @@ def update_file(file_path: Path, dry_run: bool = False) -> List[Tuple[str, Dict[
             'command': None,
             'error': 'File not found'
         })]
-    
+
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
-    
+
     blocks = find_repo_layout_blocks(content)
-    
+
     if not blocks:
         return []
-    
+
     modified = False
     lines = content.split('\n')
-    
+
+    # Calculate relative file path
+    if root_dir:
+        try:
+            rel_file_path = file_path.relative_to(root_dir).as_posix()
+        except ValueError:
+            # file_path is not relative to root_dir, use absolute
+            rel_file_path = file_path.as_posix()
+    else:
+        rel_file_path = file_path.as_posix()
+
     # Process blocks from end to start to preserve line numbers
     for start, end, command in reversed(blocks):
         block_data = {
-            'file': file_path.as_posix(),
+            'file': rel_file_path,
             'line': start + 1,
             'command': command
         }
@@ -194,7 +205,7 @@ def update_all(root_dir: Path, dry_run: bool = False) -> Dict[str, Any]:
     }
     
     for md_file in root_dir.rglob('*.md'):
-        block_results = update_file(md_file, dry_run)
+        block_results = update_file(md_file, root_dir=root_dir, dry_run=dry_run)
         
         for status, block_data in block_results:
             if status == 'updated':
@@ -233,7 +244,7 @@ def main():
     args = parser.parse_args()
     
     if args.command == 'update':
-        block_results = update_file(args.file, args.dry_run)
+        block_results = update_file(args.file, root_dir=args.file.parent, dry_run=args.dry_run)
         # Categorize block results
         results = {'updated': [], 'up_to_date': [], 'failed': []}
         for status, block_data in block_results:
